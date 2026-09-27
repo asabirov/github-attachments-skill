@@ -78,6 +78,9 @@ session parked there would let any session act as you. It lives in
 `~/.claude/state/github-attachments/chrome-profile` instead.
 
 It also picks port **9375**, not 9222, so it never fights the browser other sessions hold.
+Each run closes its tab, and closes the browser when no other run has a tab open. On Apple
+silicon it starts Chrome as arm64 explicitly: an Intel `bash` first on PATH otherwise makes
+macOS run Chrome under Rosetta, where GitHub's page takes tens of seconds per step.
 
 The Orca driver binds upload and cleanup to its created page ID, checks the target repository URL, and parses only structured result fields. Paste, polling and draft cleanup run in one browser evaluation because separate Orca evaluations may lose page state. Node.js builds the request without printing image bytes. Large transfers use bounded arguments; the Chrome driver has no CLI argument transfer.
 
@@ -110,9 +113,9 @@ an oversize image: it uploaded for a minute and then timed out. GitHub rejects o
 | Exit | Means |
 | --- | --- |
 | 2 | bad arguments, missing file, `--repo` not `owner/name`, or over GitHub's 10 MB limit |
-| 3 | no browser could be opened |
+| 3 | no browser could be opened, or the page did not finish loading within `--timeout` |
 | 4 | that browser is not signed in to GitHub |
-| 5 | no comment editor on the page — repo missing, invisible, or issues disabled |
+| 5 | no usable comment editor — repo missing, invisible, or issues disabled; or the box already has text (a saved draft or a prefilled issue template), which is left untouched |
 | 6 | the editor ignored the paste |
 | 7 | the upload never returned a URL within `--timeout` |
 
