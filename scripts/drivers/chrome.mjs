@@ -49,7 +49,14 @@ async function startChrome() {
 	];
 	// The login run wants a window; every other run must never steal focus.
 	if (!login) args.push("--headless=new", "--disable-gpu");
-	const child = spawn(CHROME, args, { stdio: "ignore", detached: true });
+	// Chrome is a universal binary, and macOS starts it as x86_64 under Rosetta when an
+	// Intel shell is anywhere up the chain, even through an arm64-only node. An Intel
+	// bash first on PATH (a leftover /usr/local/bin/bash) did exactly that through
+	// mint.sh's `env bash`, and GitHub then took 30-40s per step (#6). Ask for the
+	// architecture node itself runs as.
+	const [cmd, pre] =
+		process.platform === "darwin" && process.arch === "arm64" ? ["/usr/bin/arch", ["-arm64", CHROME]] : [CHROME, []];
+	const child = spawn(cmd, [...pre, ...args], { stdio: "ignore", detached: true });
 	child.unref();
 	for (let i = 0; i < 100; i++) {
 		try {
@@ -96,11 +103,30 @@ async function connect(url) {
 	return { page, evaluate, close: () => ws.close() };
 }
 
-async function settled(evaluate) {
-	for (let i = 0; i < 100; i++) {
-		if ((await evaluate("document.readyState")) === "complete") return;
-		await new Promise((r) => setTimeout(r, 100));
-	}
+// Every mint opens a tab, so every mint closes it. Left open, they piled up in one
+// headless Chrome that ran for days, each GitHub page with its own renderer (#6). The
+// browser goes too once nothing else is using it; a concurrent mint's tab, even one
+// still on about:blank, keeps it alive. chrome://newtab/ is Chrome's own.
+async function closeTab(tab) {
+	tab.close();
+	try {
+		await fetch(`http://127.0.0.1:${PORT}/json/close/${tab.page.id}`);
+		const others = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).filter(
+			(t) => t.type === "page" && t.id !== tab.page.id && t.url !== "chrome://newtab/",
+		);
+		if (others.length) return;
+		const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json();
+		const browser = new WebSocket(webSocketDebuggerUrl);
+		await new Promise((res, rej) => {
+			browser.onopen = res;
+			browser.onerror = rej;
+		});
+		browser.send(JSON.stringify({ id: 1, method: "Browser.close" }));
+		await new Promise((r) => {
+			browser.onclose = r;
+			setTimeout(r, 2000);
+		});
+	} catch {} // Cleanup never turns a minted URL into a failure.
 }
 
 // --- the one-time login -----------------------------------------------------
@@ -131,27 +157,17 @@ if (login) {
 
 if (!image || !repo) die(2, "usage: chrome.mjs <image> <owner/repo> <timeout-seconds>");
 
-await startChrome();
-const tab = await connect(`https://github.com/${repo}/issues/new`);
-await settled(tab.evaluate);
-await tab.evaluate(readFileSync(LIB, "utf8"));
-
-const who = await tab.evaluate("globalThis.__ghAttach.whoami()");
-if (!who) {
-	die(
-		4,
-		"this browser is not signed in to GitHub.",
-		"Run `scripts/login.sh` once; the session then persists for every later run.",
-	);
+const target = `https://github.com/${repo}/issues/new`;
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+class Failure extends Error {
+	constructor(code, lines) {
+		super(lines[0]);
+		Object.assign(this, { code, lines });
+	}
 }
-
-if ((await tab.evaluate("globalThis.__ghAttach.editors().length")) === 0) {
-	die(
-		5,
-		`no comment editor on https://github.com/${repo}/issues/new`,
-		"Check the repository exists, that this account can see it, and that issues are enabled.",
-	);
-}
+const fail = (code, ...lines) => {
+	throw new Failure(code, lines);
+};
 
 // Read straight to base64 so the bytes never become a string anyone has to look at.
 const b64 = readFileSync(image).toString("base64");
@@ -166,22 +182,72 @@ const mime = name.toLowerCase().endsWith(".png")
 				? "image/webp"
 				: /\.pdf$/i.test(name) ? "application/pdf" : "application/octet-stream";
 
-const pasted = await tab.evaluate(
-	`globalThis.__ghAttach.paste(${JSON.stringify(b64)},${JSON.stringify(name)},${JSON.stringify(mime)})`,
-);
-if (!pasted?.ok) die(6, `the editor did not accept the paste (${pasted?.reason || "unknown"})`);
-
-const deadline = Date.now() + timeoutMs;
-for (;;) {
-	const got = await tab.evaluate("globalThis.__ghAttach.harvest()");
-	if (got?.state === "done") {
-		await tab.evaluate("globalThis.__ghAttach.clear()");
-		console.log(got.url);
-		process.exit(0);
+await startChrome();
+const tab = await connect(target);
+const library = readFileSync(LIB, "utf8");
+// Navigation replaces the page's globals and can destroy the context mid-question, so
+// every call re-installs the library and a thrown evaluate just means "not yet".
+const ask = async (expression) => {
+	try {
+		return await tab.evaluate(`(() => { if (!globalThis.__ghAttach) { ${library} } return ${expression}; })()`);
+	} catch {
+		return null;
 	}
-	if (Date.now() > deadline) break;
-	await new Promise((r) => setTimeout(r, 500));
-}
+};
 
-await tab.evaluate("globalThis.__ghAttach.clear()");
-die(7, `gave up after ${timeoutMs / 1000}s waiting for GitHub to return an asset URL`);
+let code = 0;
+let pasted = false;
+try {
+	const deadline = Date.now() + timeoutMs;
+
+	let where = { state: "loading" };
+	while (Date.now() < deadline) {
+		where = (await ask(`globalThis.__ghAttach.page(${JSON.stringify(target)})`)) || { state: "loading" };
+		if (where.state === "ready" || where.state === "signed-out" || where.state === "wrong-page") break;
+		await pause(250);
+	}
+	if (where.state === "loading") fail(3, `${target} did not finish loading within ${timeoutMs / 1000}s`);
+	if (where.state === "signed-out")
+		fail(
+			4,
+			"this browser is not signed in to GitHub.",
+			"Run `scripts/login.sh` once; the session then persists for every later run.",
+		);
+	if (where.state !== "ready")
+		fail(
+			5,
+			`no comment editor on ${target}`,
+			"Check the repository exists, that this account can see it, and that issues are enabled.",
+		);
+
+	// The server-rendered textarea is on screen before React has attached its paste
+	// handler, then React swaps in its own. Until then the paste is ignored, which has no
+	// side effect, so keep offering it.
+	let offer = null;
+	while (Date.now() < deadline) {
+		offer = await ask(
+			`globalThis.__ghAttach.paste(${JSON.stringify(b64)},${JSON.stringify(name)},${JSON.stringify(mime)})`,
+		);
+		if (offer?.ok) break;
+		await pause(250);
+	}
+	if (!offer?.ok) fail(6, `the editor did not accept the paste (${offer?.reason || "unknown"})`);
+	pasted = true;
+
+	for (;;) {
+		const got = await ask("globalThis.__ghAttach.harvest()");
+		if (got?.state === "done") {
+			console.log(got.url);
+			break;
+		}
+		if (Date.now() > deadline) fail(7, `gave up after ${timeoutMs / 1000}s waiting for GitHub to return an asset URL`);
+		await pause(500);
+	}
+} catch (e) {
+	code = e instanceof Failure ? e.code : 3;
+	for (const l of e instanceof Failure ? e.lines : [e.message]) console.error(`chrome: ${l}`);
+} finally {
+	if (pasted) await ask("globalThis.__ghAttach.clear()");
+	await closeTab(tab);
+}
+process.exit(code);

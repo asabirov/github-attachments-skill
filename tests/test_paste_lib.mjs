@@ -16,7 +16,13 @@ const LIB = join(dirname(fileURLToPath(import.meta.url)), "..", "lib", "paste.js
 
 // --- the smallest DOM the library will accept -------------------------------
 
-function makeDom({ textareas = [], login = null, takesPaste = true } = {}) {
+function makeDom({
+	textareas = [],
+	login = null,
+	takesPaste = true,
+	href = "https://github.com/owner/repo/issues/new",
+	readyState = "complete",
+} = {}) {
 	const setter = { calls: 0 };
 	class FakeTextArea {
 		constructor(spec) {
@@ -64,6 +70,7 @@ function makeDom({ textareas = [], login = null, takesPaste = true } = {}) {
 	});
 
 	const document = {
+		readyState,
 		querySelectorAll: (sel) => (sel === "textarea" ? nodes : []),
 		querySelector: (sel) =>
 			sel === "meta[name=user-login]" ? (login ? { content: login } : null) : null,
@@ -71,6 +78,7 @@ function makeDom({ textareas = [], login = null, takesPaste = true } = {}) {
 
 	const sandbox = {
 		document,
+		location: new URL(href),
 		window: win,
 		DataTransfer: class {
 			constructor() {
@@ -187,6 +195,53 @@ it("clear goes through the prototype setter, which is what React watches", () =>
 it("whoami returns null when signed out and the login when signed in", () => {
 	assert.equal(load(makeDom({ textareas: [] })).whoami(), null);
 	assert.equal(load(makeDom({ textareas: [], login: "example-user" })).whoami(), "example-user");
+});
+
+// A tab opened through DevTools starts on about:blank, whose readyState is already
+// "complete". Treating that as loaded is what made every signed-in run exit 4 (#6).
+const target = "https://github.com/owner/repo/issues/new";
+const editor = { id: "_r_c_", placeholder: "Type your description here…" };
+
+it("a blank tab is still loading, not signed out", () => {
+	const s = makeDom({ href: "about:blank", textareas: [] });
+	assert.equal(load(s).page(target).state, "loading");
+});
+
+it("the target page before its login meta and editor arrive is still loading", () => {
+	const s = makeDom({ readyState: "loading", textareas: [] });
+	assert.equal(load(s).page(target).state, "loading");
+});
+
+// The server-rendered editor ignores a paste until React replaces it, and one offered
+// mid-hydration held a slow page for 34s, so nothing is ready before the load completes.
+it("a signed-in page whose scripts are still running is not ready yet", () => {
+	const s = makeDom({ readyState: "interactive", login: "example-user", textareas: [editor] });
+	assert.equal(load(s).page(target).state, "loading");
+});
+
+it("a signed-in target page with an editor is ready", () => {
+	const s = makeDom({ login: "example-user", textareas: [editor] });
+	assert.deepEqual(load(s).page(target), { state: "ready", who: "example-user" });
+});
+
+it("a redirect to the login page is signed out", () => {
+	const s = makeDom({ href: "https://github.com/login?return_to=x", readyState: "loading" });
+	assert.equal(load(s).page(target).state, "signed-out");
+});
+
+it("a loaded target page with no login is signed out", () => {
+	const s = makeDom({ textareas: [editor] });
+	assert.equal(load(s).page(target).state, "signed-out");
+});
+
+it("a signed-in page with no editor keeps waiting; the caller's deadline decides", () => {
+	const s = makeDom({ login: "example-user", textareas: [] });
+	assert.equal(load(s).page(target).state, "no-editor");
+});
+
+it("another page is reported as the wrong page", () => {
+	const s = makeDom({ href: "https://github.com/other/repo/issues/new", login: "example-user" });
+	assert.equal(load(s).page(target).state, "wrong-page");
 });
 
 console.log(`\n${pass} passed`);
