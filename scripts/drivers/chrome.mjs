@@ -14,7 +14,7 @@
 // Usage: chrome.mjs <image> <owner/repo> <timeout-seconds> [--login]
 // Prints: the asset uuid on stdout. Everything else goes to stderr.
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -52,10 +52,13 @@ async function startChrome() {
 	// Chrome is a universal binary, and macOS starts it as x86_64 under Rosetta when an
 	// Intel shell is anywhere up the chain, even through an arm64-only node. An Intel
 	// bash first on PATH (a leftover /usr/local/bin/bash) did exactly that through
-	// mint.sh's `env bash`, and GitHub then took 30-40s per step (#6). Ask for the
-	// architecture node itself runs as.
-	const [cmd, pre] =
-		process.platform === "darwin" && process.arch === "arm64" ? ["/usr/bin/arch", ["-arm64", CHROME]] : [CHROME, []];
+	// mint.sh's `env bash`, and GitHub then took 30-40s per step (#6). Ask the hardware,
+	// not process.arch: a universal node is itself translated in that chain.
+	let appleSilicon = false;
+	try {
+		appleSilicon = execFileSync("/usr/sbin/sysctl", ["-n", "hw.optional.arm64"], { encoding: "utf8" }).trim() === "1";
+	} catch {} // Intel Macs have no such key.
+	const [cmd, pre] = appleSilicon ? ["/usr/bin/arch", ["-arm64", CHROME]] : [CHROME, []];
 	const child = spawn(cmd, [...pre, ...args], { stdio: "ignore", detached: true });
 	child.unref();
 	for (let i = 0; i < 100; i++) {
@@ -78,6 +81,12 @@ async function connect(url) {
 
 	let next = 1;
 	const waiting = new Map();
+	// A closed socket never answers, and send() on it does not throw, so settle every
+	// question still waiting instead of hanging the caller past its deadline.
+	ws.onclose = ws.onerror = () => {
+		for (const p of waiting.values()) p.reject(new Error("page connection closed"));
+		waiting.clear();
+	};
 	ws.onmessage = (e) => {
 		const msg = JSON.parse(e.data);
 		const pending = waiting.get(msg.id);
@@ -203,7 +212,7 @@ try {
 	let where = { state: "loading" };
 	while (Date.now() < deadline) {
 		where = (await ask(`globalThis.__ghAttach.page(${JSON.stringify(target)})`)) || { state: "loading" };
-		if (where.state === "ready" || where.state === "signed-out" || where.state === "wrong-page") break;
+		if (["ready", "signed-out", "wrong-page", "draft"].includes(where.state)) break;
 		await pause(250);
 	}
 	if (where.state === "loading") fail(3, `${target} did not finish loading within ${timeoutMs / 1000}s`);
@@ -213,6 +222,8 @@ try {
 			"this browser is not signed in to GitHub.",
 			"Run `scripts/login.sh` once; the session then persists for every later run.",
 		);
+	if (where.state === "draft")
+		fail(5, `the editor on ${target} already holds a draft; left untouched`, "Clear or submit it, then run again.");
 	if (where.state !== "ready")
 		fail(
 			5,
@@ -221,12 +232,15 @@ try {
 		);
 
 	// The server-rendered textarea is on screen before React has attached its paste
-	// handler, then React swaps in its own. Until then the paste is ignored, which has no
-	// side effect, so keep offering it.
+	// handler, then React swaps in its own. Until then the paste is ignored, so keep
+	// offering it -- but only while the editor stays empty: anything in it means some
+	// handler took a file, and another offer would upload it again. The bytes go over
+	// once, not with every offer.
+	await ask(`(globalThis.__ghAttachFile = ${JSON.stringify(b64)}, true)`);
 	let offer = null;
 	while (Date.now() < deadline) {
 		offer = await ask(
-			`globalThis.__ghAttach.paste(${JSON.stringify(b64)},${JSON.stringify(name)},${JSON.stringify(mime)})`,
+			`globalThis.__ghAttach.editors()[0]?.value.trim() ? { ok: true } : globalThis.__ghAttachFile ? globalThis.__ghAttach.paste(globalThis.__ghAttachFile,${JSON.stringify(name)},${JSON.stringify(mime)}) : { ok: false, reason: "file-not-staged" }`,
 		);
 		if (offer?.ok) break;
 		await pause(250);
@@ -248,6 +262,7 @@ try {
 	for (const l of e instanceof Failure ? e.lines : [e.message]) console.error(`chrome: ${l}`);
 } finally {
 	if (pasted) await ask("globalThis.__ghAttach.clear()");
+	await ask("(delete globalThis.__ghAttachFile, true)");
 	await closeTab(tab);
 }
 process.exit(code);

@@ -239,6 +239,13 @@ it("a signed-in page with no editor keeps waiting; the caller's deadline decides
 	assert.equal(load(s).page(target).state, "no-editor");
 });
 
+// A draft already in the box would be harvested as if it were this run's upload, and
+// clearing it would destroy someone's text. The Orca driver refuses it the same way.
+it("an editor that already holds a draft is refused, not reused", () => {
+	const s = makeDom({ login: "example-user", textareas: [{ ...editor, value: "half-written issue" }] });
+	assert.equal(load(s).page(target).state, "draft");
+});
+
 it("another page is reported as the wrong page", () => {
 	const s = makeDom({ href: "https://github.com/other/repo/issues/new", login: "example-user" });
 	assert.equal(load(s).page(target).state, "wrong-page");
