@@ -246,6 +246,34 @@ it("an editor that already holds a draft is refused, not reused", () => {
 	assert.equal(load(s).page(target).state, "draft");
 });
 
+// GitHub restores a saved draft into the client-rendered editor, after page() has
+// already said "ready". Text in an editor this run never pasted into is that draft.
+it("offer pastes into an empty editor", () => {
+	const s = makeDom({ textareas: [{ id: "new_comment_field" }] });
+	assert.equal(load(s).offer("AA==", "a.png", "image/png").ok, true);
+	assert.equal(s.nodes[0].events.filter((e) => e.type === "paste").length, 1);
+});
+
+it("offer refuses text it did not paste, and pastes nothing", () => {
+	const s = makeDom({ textareas: [{ id: "new_comment_field", value: "restored draft" }] });
+	assert.equal(load(s).offer("AA==", "a.png", "image/png").reason, "draft");
+	assert.equal(s.nodes[0].events.length, 0);
+});
+
+it("offer does not paste twice into an editor that took the first one", () => {
+	const s = makeDom({ textareas: [{ id: "new_comment_field" }], takesPaste: false });
+	const lib = load(s);
+	lib.offer("AA==", "a.png", "image/png");
+	s.nodes[0].value = "Uploading a.png…"; // taken without cancelling the event
+	assert.equal(lib.offer("AA==", "a.png", "image/png").ok, true);
+	assert.equal(s.nodes[0].events.filter((e) => e.type === "paste").length, 1);
+});
+
+it("offer without staged bytes says so", () => {
+	const s = makeDom({ textareas: [{ id: "new_comment_field" }] });
+	assert.equal(load(s).offer(undefined, "a.png", "image/png").reason, "file-not-staged");
+});
+
 it("another page is reported as the wrong page", () => {
 	const s = makeDom({ href: "https://github.com/other/repo/issues/new", login: "example-user" });
 	assert.equal(load(s).page(target).state, "wrong-page");

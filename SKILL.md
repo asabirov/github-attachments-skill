@@ -115,7 +115,7 @@ an oversize image: it uploaded for a minute and then timed out. GitHub rejects o
 | 2 | bad arguments, missing file, `--repo` not `owner/name`, or over GitHub's 10 MB limit |
 | 3 | no browser could be opened, or the page did not finish loading within `--timeout` |
 | 4 | that browser is not signed in to GitHub |
-| 5 | no comment editor on the page — repo missing, invisible, or issues disabled |
+| 5 | no usable comment editor — repo missing, invisible, or issues disabled; or the box already has text (a saved draft or a prefilled issue template), which is left untouched |
 | 6 | the editor ignored the paste |
 | 7 | the upload never returned a URL within `--timeout` |
 

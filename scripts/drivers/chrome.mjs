@@ -204,6 +204,11 @@ const ask = async (expression) => {
 	}
 };
 
+const draftLines = [
+	`the editor on ${target} already has text in it; left untouched`,
+	"It is a saved draft in this skill's Chrome profile, or the repository's issue template prefills the body.",
+];
+
 let code = 0;
 let pasted = false;
 try {
@@ -222,8 +227,7 @@ try {
 			"this browser is not signed in to GitHub.",
 			"Run `scripts/login.sh` once; the session then persists for every later run.",
 		);
-	if (where.state === "draft")
-		fail(5, `the editor on ${target} already holds a draft; left untouched`, "Clear or submit it, then run again.");
+	if (where.state === "draft") fail(5, ...draftLines);
 	if (where.state !== "ready")
 		fail(
 			5,
@@ -231,20 +235,20 @@ try {
 			"Check the repository exists, that this account can see it, and that issues are enabled.",
 		);
 
-	// The server-rendered textarea is on screen before React has attached its paste
-	// handler, then React swaps in its own. Until then the paste is ignored, so keep
-	// offering it -- but only while the editor stays empty: anything in it means some
-	// handler took a file, and another offer would upload it again. The bytes go over
-	// once, not with every offer.
-	await ask(`(globalThis.__ghAttachFile = ${JSON.stringify(b64)}, true)`);
+	// Keep offering until the client-rendered editor takes the file (see offer() in
+	// lib/paste.js). The bytes go to the page once, not with every offer.
+	const stage = `(globalThis.__ghAttachFile = ${JSON.stringify(b64)}, true)`;
+	await ask(stage);
 	let offer = null;
 	while (Date.now() < deadline) {
 		offer = await ask(
-			`globalThis.__ghAttach.editors()[0]?.value.trim() ? { ok: true } : globalThis.__ghAttachFile ? globalThis.__ghAttach.paste(globalThis.__ghAttachFile,${JSON.stringify(name)},${JSON.stringify(mime)}) : { ok: false, reason: "file-not-staged" }`,
+			`globalThis.__ghAttach.offer(globalThis.__ghAttachFile,${JSON.stringify(name)},${JSON.stringify(mime)})`,
 		);
-		if (offer?.ok) break;
+		if (offer?.ok || offer?.reason === "draft") break;
+		if (offer?.reason === "file-not-staged") await ask(stage);
 		await pause(250);
 	}
+	if (offer?.reason === "draft") fail(5, ...draftLines);
 	if (!offer?.ok) fail(6, `the editor did not accept the paste (${offer?.reason || "unknown"})`);
 	pasted = true;
 
