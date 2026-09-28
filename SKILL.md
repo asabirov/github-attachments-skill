@@ -26,7 +26,7 @@ Repository names and attachment IDs in these examples are synthetic placeholders
 *Call GitHub's upload endpoint directly* — reproduce the policy, S3 upload, and confirmation sequence used by the web UI. This was rejected because it cannot be authenticated. A request to `POST
 github.com/upload/policies/assets` with a personal access token and a real repository ID returned **422** with GitHub's generic error page instead of an upload policy. The endpoint requires a session cookie and a CSRF token. There is no token-based path, so there is no CI path.
 
-That 422 made the browser session the only available key. Let GitHub’s editor upload the file and read its textarea.
+That 422 made the browser session the only available key. Let GitHub's editor upload the file and read its textarea.
 
 ## Three things that can mislead you
 
@@ -51,9 +51,9 @@ gh api repos/OWNER/REPO/pulls/N -H 'Accept: application/vnd.github.html+json' --
 | `orca` | `ORCA_WORKTREE_ID` is set and `orca` is on PATH | Node.js and `file` on PATH; uses the Orca browser session, exits 4 if signed out |
 | `chrome` | everywhere else | `scripts/login.sh`, once |
 
-Chrome runs headless without additional dependencies. It uses Node’s global `WebSocket` (since v21) to speak the DevTools Protocol. It avoids coupling to another skill’s `node_modules` by not importing puppeteer from `browser-tools`. It uses `~/.claude/state/github-attachments/chrome-profile`, not `~/.cache/browser-tools`: every Claude session on this machine shares that cache, so a live GitHub session there would let any session act as you.
+Chrome runs headless without additional dependencies. It uses Node's global `WebSocket` (since v21) to speak the DevTools Protocol. It avoids coupling to another skill's `node_modules` by not importing puppeteer from `browser-tools`. It uses `~/.claude/state/github-attachments/chrome-profile`, not `~/.cache/browser-tools`: every Claude session on this machine shares that cache, so a live GitHub session there would let any session act as you.
 
-Port **9375**, not 9222, avoids other sessions’ browsers. Each run closes its tab and, when no other run has a tab open, the browser. On Apple silicon, it explicitly starts Chrome as arm64. Otherwise, if an Intel `bash` appears first on PATH, macOS runs Chrome under Rosetta, where GitHub's page takes tens of seconds per step.
+Port **9375**, not 9222, avoids other sessions' browsers. Each run closes its tab and, when no other run has a tab open, the browser. On Apple silicon, it explicitly starts Chrome as arm64, because an Intel `bash` first on PATH would make macOS run Chrome under Rosetta, where GitHub's page takes tens of seconds per step.
 
 The Orca driver ties upload and cleanup to the page ID it created, checks the target repository URL, and parses only structured result fields. Paste, polling, and draft cleanup happen in one browser evaluation because separate Orca evaluations may lose page state. Node.js builds the request without printing image bytes. Large transfers use bounded arguments; the Chrome driver has no CLI argument transfer.
 
@@ -65,7 +65,7 @@ The Orca driver stages large files in bounded calls within its own tab before pa
 
 ### The one manual step
 
-GitHub’s upload requires a session, which no script can create: it needs a password and a second factor. `scripts/login.sh` opens a visible Chrome window using this skill's own profile, waits for sign-in to complete, and prints the login it detected. After that, every run is headless and unattended until the session expires. Inside Orca, you never need this step.
+GitHub's upload requires a session, which no script can create: it needs a password and a second factor. `scripts/login.sh` opens a visible Chrome window using this skill's own profile, waits for sign-in to complete, and prints the login it detected. After that, every run is headless and unattended until the session expires. Inside Orca, you never need this step.
 
 ## What it refuses, and why it refuses early
 
