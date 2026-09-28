@@ -5,8 +5,7 @@ description: "Attach an image or PDF to a GitHub issue, PR, or comment without c
 
 # github-attachments
 
-One command. A path goes in, a URL comes out, and the image or PDF is accessible from any issue, pull
-request or comment on the repository you named.
+Give the command a file path to get an image or PDF URL for any issue, pull request, or comment in the named repository.
 
 ```bash
 scripts/mint.sh shot.png --repo example-owner/example-repo
@@ -16,99 +15,61 @@ scripts/mint.sh shot.png --repo example-owner/example-repo --format markdown
 gh pr edit 42 --repo example-owner/example-repo --body-file body.md
 ```
 
-Repository names and attachment IDs in examples are synthetic placeholders, not live assets.
+Repository names and attachment IDs in these examples are synthetic placeholders, not live assets.
 
 ## Decision
 
-**Drive a signed-in browser's own paste handler, and mint a URL that callers embed
-themselves.** Two alternatives were tried and turned down on 2026-09-03.
+**Use a signed-in browser's paste handler, then return the URL for callers to embed.** Two alternatives were tested and rejected on 2026-09-03.
 
-*Commit the file into the repository* — write it to `.github/pr-screenshots/`, link the blob.
-It works with the token every agent already holds and it runs on CI, which nothing here
-does. It was turned down on two counts. An image enters git history forever to say something
-that is true for one afternoon. A reader outside a private repo then sees nothing anyway.
+*Commit the file into the repository* — save it in `.github/pr-screenshots/` and link to the blob. This works with the token every agent already has and would work on CI, which this skill does not. It was rejected because the image would remain in git history forever, even though it describes something true for only one afternoon. Readers outside a private repository would also see nothing.
 
-*Call GitHub's upload endpoint directly* — reimplement the policy-then-S3-then-confirm dance
-the web UI performs. Turned down because it cannot be authenticated: `POST
-github.com/upload/policies/assets` with a personal access token and a real repository id
-answered **422** with GitHub's generic error page rather than a policy. That endpoint wants
-a session cookie and a CSRF token. There is no token path, so there is no CI path.
+*Call GitHub's upload endpoint directly* — reproduce the policy, S3 upload, and confirmation sequence used by the web UI. This was rejected because it cannot be authenticated. A request to `POST
+github.com/upload/policies/assets` with a personal access token and a real repository ID returned **422** with GitHub's generic error page instead of an upload policy. The endpoint requires a session cookie and a CSRF token. There is no token-based path, so there is no CI path.
 
-Decided by that 422. Once a browser session is the only key, the cheapest correct thing is
-to let the editor GitHub already ships do the upload, and read the answer out of its
-textarea.
+That 422 made the browser session the only available key. Let GitHub’s editor upload the file and read its textarea.
 
-## Three things that will mislead you
+## Three things that can mislead you
 
-**The URL is a reference, not a file.** `github.com/user-attachments/assets/<uuid>` returns
-**404** on a private repository's asset no matter who asks — signed in, repo owner, does not
-matter. GitHub rewrites it at render time to a `private-user-images.githubusercontent.com`
-URL carrying a JWT that expires in about five minutes. On a **public** repository the plain
-URL does fetch: `200 image/png`, verified against `cli/cli`. So a direct `curl` proves
-nothing on a private repo, and the honest check is to read the rendered body:
+**The URL is a reference, not the file itself.** `github.com/user-attachments/assets/<uuid>` returns **404** for an asset in a private repository, regardless of who requests it. This includes signed-in repository owners. When GitHub renders the URL, it rewrites it to a `private-user-images.githubusercontent.com` URL containing a JWT that expires in about five minutes.
+
+For a **public** repository, the plain URL does fetch the file: `200 image/png`, verified against `cli/cli`. A direct `curl` request therefore proves nothing for a private repository. The reliable check is to read the rendered body:
 
 ```bash
 gh api repos/OWNER/REPO/pulls/N -H 'Accept: application/vnd.github.html+json' --jq .body_html
 ```
 
-**The asset belongs to a repository, not to you.** The `repository_id` is captured at upload
-time from the page the paste happened on. That is why `--repo` is required and not a guess:
-mint against repo A, embed in repo B, and it renders for you and 404s for your reader.
+**The asset belongs to a repository, not to you.** GitHub records the `repository_id` from the paste page during upload, so `--repo` is required and must be correct. If you mint the asset against repository A and embed it in repository B, it renders for you but returns 404 for your reader.
 
-**Never put the bytes through a conversation.** `mint.sh` takes a path and prints a URL, and
-it must stay that way. A 416 KB screenshot is 554,756 characters of base64 — on the order of
-150k tokens through an agent's context to accomplish what a path accomplishes for about 200.
-For the same reason, do not `Read` an image in order to upload it. You do not need to see it.
+**Do not send the file bytes through a conversation.** `mint.sh` must keep accepting a path and printing a URL. A 416 KB screenshot becomes 554,756 base64 characters—about 150k tokens in an agent's context—to accomplish what a path accomplishes with about 200 tokens. For the same reason, do not `Read` an image before uploading it. You do not need to view it.
 
 ## Drivers
 
-`--driver auto` picks the first that works.
+`--driver auto` selects the first driver that works.
 
 | Driver | When | Setup |
 | --- | --- | --- |
 | `orca` | `ORCA_WORKTREE_ID` is set and `orca` is on PATH | Node.js and `file` on PATH; uses the Orca browser session, exits 4 if signed out |
 | `chrome` | everywhere else | `scripts/login.sh`, once |
 
-The Chrome driver runs headless with no dependencies: Node has had a global `WebSocket`
-since v21, so it speaks the DevTools Protocol with nothing installed. It deliberately does
-not import puppeteer out of `browser-tools` — a skill reaching into another skill's
-`node_modules` is the coupling this skill avoids — and it deliberately does not use
-`~/.cache/browser-tools`, which every Claude session on this machine shares. A live GitHub
-session parked there would let any session act as you. It lives in
-`~/.claude/state/github-attachments/chrome-profile` instead.
+Chrome runs headless without additional dependencies. It uses Node’s global `WebSocket` (since v21) to speak the DevTools Protocol. It avoids coupling to another skill’s `node_modules` by not importing puppeteer from `browser-tools`. It uses `~/.claude/state/github-attachments/chrome-profile`, not `~/.cache/browser-tools`: every Claude session on this machine shares that cache, so a live GitHub session there would let any session act as you.
 
-It also picks port **9375**, not 9222, so it never fights the browser other sessions hold.
-Each run closes its tab, and closes the browser when no other run has a tab open. On Apple
-silicon it starts Chrome as arm64 explicitly: an Intel `bash` first on PATH otherwise makes
-macOS run Chrome under Rosetta, where GitHub's page takes tens of seconds per step.
+Port **9375**, not 9222, avoids other sessions’ browsers. Each run closes its tab and, when no other run has a tab open, the browser. On Apple silicon, it explicitly starts Chrome as arm64. Otherwise, if an Intel `bash` appears first on PATH, macOS runs Chrome under Rosetta, where GitHub's page takes tens of seconds per step.
 
-The Orca driver binds upload and cleanup to its created page ID, checks the target repository URL, and parses only structured result fields. Paste, polling and draft cleanup run in one browser evaluation because separate Orca evaluations may lose page state. Node.js builds the request without printing image bytes. Large transfers use bounded arguments; the Chrome driver has no CLI argument transfer.
+The Orca driver ties upload and cleanup to the page ID it created, checks the target repository URL, and parses only structured result fields. Paste, polling, and draft cleanup happen in one browser evaluation because separate Orca evaluations may lose page state. Node.js builds the request without printing image bytes. Large transfers use bounded arguments; the Chrome driver has no CLI argument transfer.
 
 ### PDF documents
 
-Use the same command with a `.pdf` path. PDF URLs use
-`https://github.com/user-attachments/files/<id>/<filename>`; preserve the full URL.
-`--format markdown` returns a normal link and `--format html` returns an anchor.
-Images keep their existing inline rendering. The helper retains its conservative
-10 MB file limit for both types.
+Use the same command with a `.pdf` path. Preserve the full PDF URL: `https://github.com/user-attachments/files/<id>/<filename>`. `--format markdown` returns a normal link, and `--format html` returns an anchor. Images continue to render inline. The helper keeps its conservative 10 MB file limit for both images and PDFs.
 
-The Orca driver stages large files in bounded calls within its own tab before
-pasting. Staging uses a unique origin-storage key; SHA-256 is checked before paste. Cleanup is retried on exit, with a warning naming the key if it cannot be verified. Browser origin-storage quota
-can limit large transfers; a staging failure returns no URL. The Chrome driver
-does not use this staging path.
+The Orca driver stages large files in bounded calls within its own tab before pasting. It uses a unique origin-storage key for staging and checks the SHA-256 hash before pasting. Cleanup is retried on exit, with a warning naming the key if it cannot be verified. Browser origin-storage quota can limit large transfers; if staging fails, the driver returns no URL. The Chrome driver does not use this staging path.
 
 ### The one manual step
 
-GitHub's upload needs a session, and no script can create one — that is a password and a
-second factor. `scripts/login.sh` opens a visible Chrome against this skill's own profile,
-waits for the sign-in to land, and prints the login it saw. Every run after that is headless
-and unattended until the session expires. Inside Orca you never need it.
+GitHub’s upload requires a session, which no script can create: it needs a password and a second factor. `scripts/login.sh` opens a visible Chrome window using this skill's own profile, waits for sign-in to complete, and prints the login it detected. After that, every run is headless and unattended until the session expires. Inside Orca, you never need this step.
 
 ## What it refuses, and why it refuses early
 
-Everything below is decided before a browser starts. The failure that actually cost time was
-an oversize image: it uploaded for a minute and then timed out. GitHub rejects on size
-*after* the transfer, so the refusal has to happen here instead.
+These checks happen before a browser starts. An oversized image previously caused a costly failure: it uploaded for a minute and then timed out. GitHub checks the size *after* the transfer, so this skill rejects the file before uploading it.
 
 | Exit | Means |
 | --- | --- |
@@ -119,26 +80,15 @@ an oversize image: it uploaded for a minute and then timed out. GitHub rejects o
 | 6 | the editor ignored the paste |
 | 7 | the upload never returned a URL within `--timeout` |
 
-Signed out gets its own exit code on purpose: it is the failure that otherwise looks
-exactly like a broken upload, and it is the one with a one-command fix.
+Signed-out status has its own exit code because it looks exactly like a failed upload but has a one-command fix.
 
-## How the upload actually happens
+## How the upload happens
 
-`lib/paste.js` builds a `File` in the page, puts it in a `DataTransfer`, and dispatches a
-`paste` at the markdown editor. GitHub's own JavaScript does the upload it already knows how
-to do and writes the finished reference into the textarea, which is then read back and
-cleared so no draft is left behind.
+`lib/paste.js` creates a `File` in the page, places it in a `DataTransfer`, and dispatches a `paste` event to the Markdown editor. GitHub's JavaScript performs the upload and writes the completed reference into the textarea. The reference is read back, and the textarea is cleared so no draft remains.
 
-Two editors exist and both take a paste: the classic issue and PR pages use textareas named
-`new_comment_field` and `fc-<resource>-body`, and the newer `/issues/new` page is a React
-editor with a generated id. `/issues/new` is what `mint.sh` targets, because it is the one
-page that exists on every repository — no issue or PR has to be there first.
+Both editor types accept a paste. Classic issue and pull-request pages use textareas named `new_comment_field` and `fc-<resource>-body`. The newer `/issues/new` page uses a React editor with a generated ID. `mint.sh` targets `/issues/new` because this page exists in every repository; no issue or pull request needs to exist first.
 
-**`DOM.setFileInputFiles` does not work here**, which is what `orca upload` and most CDP
-recipes use. GitHub keeps its file input out of the accessibility tree behind an "Attach
-files" button, so the element ref never resolves, and on `/issues/new` there is no file
-input at all. Exposing the input with CSS does not put it back in the tree either. The paste
-was not the clever route; it was the only one.
+**`DOM.setFileInputFiles` does not work here**, even though `orca upload` and most CDP recipes use it. GitHub hides its file input from the accessibility tree behind an "Attach files" button, so the element reference never resolves. On `/issues/new`, there is no file input at all. Making the input visible with CSS does not restore it to the accessibility tree. Pasting is therefore the only available route.
 
 ## Tests
 
@@ -149,5 +99,4 @@ node tests/test_paste_lib.mjs             # the paste library against a fake DOM
 node --test tests/orca-driver.test.mjs   # PDF/image output, large transfers and cleanup
 ```
 
-None of them touches the network. The polling shell entry point runs the Orca driver suite. The end-to-end path is exercised by
-using it: mint an image, put it in a body, and read the rendered body back.
+None accesses the network. The polling shell entry point runs the Orca driver suite. Check end-to-end by using the skill: mint an image, put it in a body, and read the rendered body back.
