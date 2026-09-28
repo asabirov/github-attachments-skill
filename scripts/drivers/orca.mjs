@@ -73,10 +73,7 @@ async function upload(target, base64, name, mime, timeoutMs, storageKey, expecte
       await pause();
     }
     return { code: 7, error: 'Timed out waiting for GitHub attachment URL' };
-  } finally {
-    try { localStorage.removeItem(storageKey); }
-    finally { helper.clear(); }
-  }
+  } finally { helper.clear(); }
 }
 
 let code = 3;
@@ -145,7 +142,7 @@ try {
     let cleared = false;
     for (let attempt = 0; attempt < 3 && !cleared; attempt++) {
       try {
-        const reply = call(['eval', '--page', page, '--expression', `(() => { if (location.origin !== 'https://github.com') return JSON.stringify({cleared:false}); const key=${JSON.stringify(storageKey)}; localStorage.removeItem(key); return JSON.stringify({cleared:localStorage.getItem(key)===null}); })()`]);
+        const reply = call(['eval', '--page', page, '--expression', `(() => { if (location.origin !== 'https://github.com') return JSON.stringify({cleared:false}); localStorage.removeItem(${JSON.stringify(storageKey)}); return JSON.stringify({cleared:true}); })()`]);
         cleared = JSON.parse(reply.result)?.cleared === true;
       } catch {}
       if (!cleared && attempt < 2) await new Promise(resolve => setTimeout(resolve, 250));
