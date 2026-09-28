@@ -66,12 +66,17 @@ async function upload(target, base64, name, mime, timeoutMs, storageKey, expecte
     if (!pasted.ok) return { code: 6, error: `Editor did not accept the paste: ${pasted.reason}` };
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+      if (helper.editors()[0]?.value.includes('<!-- Failed to upload'))
+        return { code: 8, error: 'GitHub refused the upload (probably a rate limit); wait and retry later' };
       const result = helper.harvest();
       if (result.state === 'done') return { code: 0, url: result.url };
       await pause();
     }
     return { code: 7, error: 'Timed out waiting for GitHub attachment URL' };
-  } finally { helper.clear(); }
+  } finally {
+    try { localStorage.removeItem(storageKey); }
+    finally { helper.clear(); }
+  }
 }
 
 let code = 3;
@@ -118,7 +123,7 @@ try {
   for (let attempt = 0; attempt < 3; attempt++) {
     const reply = call(['eval', '--page', page, '--expression', expression]);
     const result = JSON.parse(reply.result);
-    if (!result || ![0, 3, 4, 5, 6, 7, 9].includes(result.code)) throw Error('Upload returned no valid outcome');
+    if (!result || ![0, 3, 4, 5, 6, 7, 8, 9].includes(result.code)) throw Error('Upload returned no valid outcome');
     // Blank-page replies occur before paste; never retry an uncertain upload.
     if (result.code === 9 && attempt < 2) {
       await new Promise(resolve => setTimeout(resolve, 250));
@@ -140,7 +145,7 @@ try {
     let cleared = false;
     for (let attempt = 0; attempt < 3 && !cleared; attempt++) {
       try {
-        const reply = call(['eval', '--page', page, '--expression', `(() => { if (location.origin !== 'https://github.com') return JSON.stringify({cleared:false}); localStorage.removeItem(${JSON.stringify(storageKey)}); return JSON.stringify({cleared:true}); })()`]);
+        const reply = call(['eval', '--page', page, '--expression', `(() => { if (location.origin !== 'https://github.com') return JSON.stringify({cleared:false}); const key=${JSON.stringify(storageKey)}; localStorage.removeItem(key); return JSON.stringify({cleared:localStorage.getItem(key)===null}); })()`]);
         cleared = JSON.parse(reply.result)?.cleared === true;
       } catch {}
       if (!cleared && attempt < 2) await new Promise(resolve => setTimeout(resolve, 250));
