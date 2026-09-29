@@ -15,16 +15,16 @@
 // Prints: the asset uuid on stdout. Everything else goes to stderr.
 
 import { execFileSync, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { accessSync, constants, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIB = join(HERE, "..", "..", "lib", "paste.js");
 const PROFILE = join(homedir(), ".claude", "state", "github-attachments", "chrome-profile");
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const PORT = 9375; // Not 9222: that port is browser-tools', shared by every session here.
 
 const [image, repo, timeoutArg, ...rest] = process.argv.slice(2);
@@ -38,7 +38,41 @@ const die = (code, ...lines) => {
 
 // --- Chrome -----------------------------------------------------------------
 
+function findChrome() {
+	const override = process.env.GH_ATTACH_CHROME;
+	if (override) {
+		try {
+			accessSync(override, constants.X_OK);
+			return override;
+		} catch {
+			die(3, `GH_ATTACH_CHROME is not an executable Chrome: ${override}`);
+		}
+	}
+
+	const names = process.platform === "darwin"
+		? [MAC_CHROME, "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]
+		: ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
+	for (const name of names) {
+		const candidates = name.includes("/")
+			? [name]
+			: (process.env.PATH || "").split(delimiter).filter(Boolean).map((dir) => join(dir, name));
+		for (const candidate of candidates) {
+			try {
+				accessSync(candidate, constants.X_OK);
+				return candidate;
+			} catch {}
+		}
+	}
+
+	die(
+		3,
+		"Chrome executable not found.",
+		"Set GH_ATTACH_CHROME to a Chrome executable, or install google-chrome, google-chrome-stable, chromium, or chromium-browser on PATH.",
+	);
+}
+
 async function startChrome() {
+	const chrome = findChrome();
 	await mkdir(PROFILE, { recursive: true });
 	const args = [
 		`--remote-debugging-port=${PORT}`,
@@ -56,9 +90,9 @@ async function startChrome() {
 	// not process.arch: a universal node is itself translated in that chain.
 	let appleSilicon = false;
 	try {
-		appleSilicon = execFileSync("/usr/sbin/sysctl", ["-n", "hw.optional.arm64"], { encoding: "utf8" }).trim() === "1";
+		appleSilicon = process.platform === "darwin" && execFileSync("/usr/sbin/sysctl", ["-n", "hw.optional.arm64"], { encoding: "utf8" }).trim() === "1";
 	} catch {} // Intel Macs have no such key.
-	const [cmd, pre] = appleSilicon ? ["/usr/bin/arch", ["-arm64", CHROME]] : [CHROME, []];
+	const [cmd, pre] = appleSilicon ? ["/usr/bin/arch", ["-arm64", chrome]] : [chrome, []];
 	const child = spawn(cmd, [...pre, ...args], { stdio: "ignore", detached: true });
 	child.unref();
 	for (let i = 0; i < 100; i++) {
