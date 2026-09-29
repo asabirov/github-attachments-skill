@@ -55,7 +55,7 @@ gh api repos/OWNER/REPO/pulls/N -H 'Accept: application/vnd.github.html+json' --
 
 Chrome runs headless without additional dependencies. It uses `GH_ATTACH_CHROME` when set, then looks for `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser` on PATH (and the standard macOS app path). If none is executable, it exits 3 with an actionable message. It uses Node's global `WebSocket` (since v21) to speak the DevTools Protocol. It avoids coupling to another skill's `node_modules` by not importing puppeteer from `browser-tools`. It uses `~/.claude/state/github-attachments/chrome-profile`, not `~/.cache/browser-tools`: every Claude session on this machine shares that cache, so a live GitHub session there would let any session act as you.
 
-Port **9375**, not 9222, avoids other sessions' browsers. Each run closes its tab and, when no other run has a tab open, the browser. On Apple silicon, it explicitly starts Chrome as arm64, because an Intel `bash` first on PATH would make macOS run Chrome under Rosetta, where GitHub's page takes tens of seconds per step.
+Port **9375**, not 9222, avoids other sessions' browsers. Before launch, the driver refuses with exit 3 if port 9375 is already occupied, so a second concurrent run exits 3 instead of sharing the browser. The persistent profile is single-owner because two Chromes cannot share it; stop the process using port 9375 and retry. Each run closes its tab and kills the Chrome process group it launched on success, failure, timeout, SIGINT, SIGTERM, and SIGHUP. SIGKILL cannot be caught. On Apple silicon, it explicitly starts Chrome as arm64, because an Intel `bash` first on PATH would make macOS run Chrome under Rosetta, where GitHub's page takes tens of seconds per step.
 
 The Orca driver ties upload and cleanup to the page ID it created, checks the target repository URL, and parses only structured result fields. Paste, polling, and draft cleanup happen in one browser evaluation because separate Orca evaluations may lose page state. Node.js builds the request without printing image bytes. Large transfers use bounded arguments; the Chrome driver has no CLI argument transfer.
 
@@ -76,7 +76,7 @@ These checks happen before a browser starts. An oversized image previously cause
 | Exit | Means |
 | --- | --- |
 | 2 | bad arguments, missing file, `--repo` not `owner/name`, or over GitHub's 10 MB limit |
-| 3 | no browser could be opened, or the page did not finish loading within `--timeout` |
+| 3 | no browser could be opened, the DevTools port is already in use, or the page did not finish loading within `--timeout` |
 | 4 | that browser is not signed in to GitHub |
 | 5 | no usable comment editor — repo missing, invisible, or issues disabled; or the box already has text (a saved draft or a prefilled issue template), which is left untouched |
 | 6 | the editor ignored the paste |

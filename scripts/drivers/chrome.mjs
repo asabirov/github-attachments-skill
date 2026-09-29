@@ -17,15 +17,17 @@
 import { execFileSync, spawn } from "node:child_process";
 import { accessSync, constants, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
+import { createConnection } from "node:net";
+import * as os from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIB = join(HERE, "..", "..", "lib", "paste.js");
-const PROFILE = join(homedir(), ".claude", "state", "github-attachments", "chrome-profile");
+const PROFILE = join(os.homedir(), ".claude", "state", "github-attachments", "chrome-profile");
 const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const PORT = 9375; // Not 9222: that port is browser-tools', shared by every session here.
+let chromeChild = null;
 
 const [image, repo, timeoutArg, ...rest] = process.argv.slice(2);
 const login = rest.includes("--login");
@@ -71,8 +73,55 @@ function findChrome() {
 	);
 }
 
+function portInUse() {
+	return new Promise((resolve) => {
+		const socket = createConnection({ host: "127.0.0.1", port: PORT });
+		const done = (used) => {
+			socket.destroy();
+			resolve(used);
+		};
+		socket.once("connect", () => done(true));
+		socket.once("error", () => done(false));
+	});
+}
+
+function stopChromeSync() {
+	if (!chromeChild?.pid) return;
+	try {
+		// The child is detached, so its process group contains Chrome and its
+		// renderers but not this driver or any pre-existing browser.
+		process.kill(-chromeChild.pid, "SIGTERM");
+	} catch {}
+	chromeChild = null;
+}
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+	process.once(signal, () => {
+		stopChromeSync();
+		process.exit(128 + os.constants.signals[signal]);
+	});
+}
+
+async function stopChrome() {
+	const pid = chromeChild?.pid;
+	if (!pid) return;
+	stopChromeSync();
+	await new Promise((r) => setTimeout(r, 250));
+	try {
+		process.kill(-pid, "SIGKILL");
+	} catch {}
+}
+
+process.once("exit", stopChromeSync);
+
 async function startChrome() {
 	const chrome = findChrome();
+	if (await portInUse())
+		die(
+			3,
+			`DevTools port ${PORT} is already in use; refusing to attach to an existing browser.`,
+			`Stop the process using port ${PORT} (for example, close its Chrome window) and retry.`,
+		);
 	await mkdir(PROFILE, { recursive: true });
 	const args = [
 		`--remote-debugging-port=${PORT}`,
@@ -94,6 +143,7 @@ async function startChrome() {
 	} catch {} // Intel Macs have no such key.
 	const [cmd, pre] = appleSilicon ? ["/usr/bin/arch", ["-arm64", chrome]] : [chrome, []];
 	const child = spawn(cmd, [...pre, ...args], { stdio: "ignore", detached: true });
+	chromeChild = child;
 	child.unref();
 	for (let i = 0; i < 100; i++) {
 		try {
@@ -102,6 +152,7 @@ async function startChrome() {
 		} catch {}
 		await new Promise((r) => setTimeout(r, 100));
 	}
+	await stopChrome();
 	die(3, "Chrome did not answer on the debugging port within 10s.");
 }
 
@@ -148,8 +199,8 @@ async function connect(url) {
 
 // Every mint opens a tab, so every mint closes it. Left open, they piled up in one
 // headless Chrome that ran for days, each GitHub page with its own renderer (#6). The
-// browser goes too once nothing else is using it; a concurrent mint's tab, even one
-// still on about:blank, keeps it alive. chrome://newtab/ is Chrome's own.
+// A concurrent mint cannot have a tab because startChrome refuses an occupied port.
+// The browser goes too once this run has closed its last non-new-tab page.
 async function closeTab(tab) {
 	tab.close();
 	try {
@@ -191,6 +242,7 @@ if (login) {
 		}
 		if (who) {
 			console.error(`Signed in as ${who}. You can close the window.`);
+			await stopChrome();
 			process.exit(0);
 		}
 	}
@@ -303,5 +355,6 @@ try {
 	if (pasted) await ask("globalThis.__ghAttach.clear()");
 	await ask("(delete globalThis.__ghAttachFile, true)");
 	await closeTab(tab);
+	await stopChrome();
 }
 process.exit(code);
