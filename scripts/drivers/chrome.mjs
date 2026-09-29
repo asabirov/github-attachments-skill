@@ -15,7 +15,7 @@
 // Prints: the asset uuid on stdout. Everything else goes to stderr.
 
 import { execFileSync, spawn } from "node:child_process";
-import { accessSync, constants, readFileSync } from "node:fs";
+import { accessSync, closeSync, constants, linkSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { createConnection } from "node:net";
 import * as os from "node:os";
@@ -25,9 +25,12 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIB = join(HERE, "..", "..", "lib", "paste.js");
 const PROFILE = join(os.homedir(), ".claude", "state", "github-attachments", "chrome-profile");
+const LOCK = join(dirname(PROFILE), "chrome-profile.lock");
+const TAKEOVER = `${LOCK}.takeover`;
 const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const PORT = 9375; // Not 9222: that port is browser-tools', shared by every session here.
 let chromeChild = null;
+let lockFd = null;
 
 const [image, repo, timeoutArg, ...rest] = process.argv.slice(2);
 const login = rest.includes("--login");
@@ -85,6 +88,139 @@ function portInUse() {
 	});
 }
 
+function releaseLockSync() {
+	if (lockFd === null) return;
+	let ownsLock = false;
+	try { ownsLock = readFileSync(LOCK, "utf8").trim() === String(process.pid); } catch {}
+	try { closeSync(lockFd); } catch {}
+	if (ownsLock) {
+		try { unlinkSync(LOCK); } catch {}
+	}
+	lockFd = null;
+}
+
+function pidIsAlive(pid) {
+	if (!/^\d+$/.test(pid)) return false;
+	try {
+		process.kill(Number(pid), 0);
+		return true;
+	} catch (e) {
+		return e.code !== "ESRCH";
+	}
+}
+
+function isChromeRun(pid) {
+	if (!/^\d+$/.test(pid)) return false;
+	try {
+		const command = process.platform === "darwin"
+			? execFileSync("ps", ["-p", pid, "-o", "command="], { encoding: "utf8" })
+			: readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " ");
+		return command.includes("chrome.mjs");
+	} catch {
+		return false;
+	}
+}
+
+function sleepSyncLock(ms) {
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function createTakeoverGuard() {
+	try {
+		const fd = openSync(TAKEOVER, "wx");
+		writeSync(fd, `${process.pid}\n`);
+		return fd;
+	} catch (e) {
+		if (e.code === "EEXIST") return null;
+		throw e;
+	}
+}
+
+function removeTakeoverGuard(fd) {
+	try { closeSync(fd); } catch {}
+	try { unlinkSync(TAKEOVER); } catch {}
+}
+
+function takeOverDeadGuard() {
+	let owner;
+	try { owner = readFileSync(TAKEOVER, "utf8").trim(); } catch { return; }
+	if (pidIsAlive(owner) && isChromeRun(owner)) return;
+	const staleGuard = `${TAKEOVER}.${process.pid}.${Date.now()}.stale`;
+	try {
+		renameSync(TAKEOVER, staleGuard);
+		try { unlinkSync(staleGuard); } catch {}
+	} catch (e) {
+		if (e.code !== "ENOENT") throw e;
+	}
+}
+
+function createLock() {
+	const tempLock = `${LOCK}.${process.pid}.${Date.now()}.tmp`;
+	let fd = null;
+	let linked = false;
+	try {
+		fd = openSync(tempLock, "wx");
+		writeSync(fd, `${process.pid}\n`);
+		linkSync(tempLock, LOCK);
+		linked = true;
+		unlinkSync(tempLock);
+		lockFd = fd;
+		return true;
+	} catch (e) {
+		try { if (fd !== null) closeSync(fd); } catch {}
+		try { unlinkSync(linked ? LOCK : tempLock); } catch {}
+		if (e.code === "EEXIST") return false;
+		throw e;
+	}
+}
+
+function takeLock() {
+	mkdirSync(dirname(PROFILE), { recursive: true });
+	for (let attempt = 0; attempt < 200; attempt++) {
+		if (createLock()) return;
+		let owner;
+		try { owner = readFileSync(LOCK, "utf8").trim(); } catch { continue; }
+		if (pidIsAlive(owner) && isChromeRun(owner))
+			die(
+				3,
+				"The Chrome driver is already running for this profile.",
+				`Lock ${LOCK} is held by chrome.mjs PID ${owner}. Stop the other run and retry.`,
+			);
+
+		const guardFd = createTakeoverGuard();
+		if (guardFd === null) {
+			takeOverDeadGuard();
+			sleepSyncLock(25);
+			continue;
+		}
+		try {
+			// The lock may have changed while we waited to acquire the guard.
+			let currentOwner;
+			try { currentOwner = readFileSync(LOCK, "utf8").trim(); } catch { continue; }
+			if (pidIsAlive(currentOwner) && isChromeRun(currentOwner))
+				die(
+					3,
+					"The Chrome driver is already running for this profile.",
+					`Lock ${LOCK} is held by chrome.mjs PID ${currentOwner}. Stop the other run and retry.`,
+				);
+			const staleLock = `${LOCK}.${process.pid}.${Date.now()}.stale`;
+			try { renameSync(LOCK, staleLock); } catch (renameError) {
+				if (renameError.code !== "ENOENT") throw renameError;
+				continue;
+			}
+			try {
+				if (createLock()) {
+					unlinkSync(staleLock);
+					return;
+				}
+			} finally { try { unlinkSync(staleLock); } catch {} }
+		} finally {
+			removeTakeoverGuard(guardFd);
+		}
+	}
+	die(3, `Could not acquire ${LOCK} after waiting for another takeover to finish.`);
+}
+
 function stopChromeSync() {
 	if (!chromeChild?.pid) return;
 	try {
@@ -113,9 +249,11 @@ async function stopChrome() {
 }
 
 process.once("exit", stopChromeSync);
+process.once("exit", releaseLockSync);
 
 async function startChrome() {
 	const chrome = findChrome();
+	takeLock();
 	if (await portInUse())
 		die(
 			3,
@@ -198,7 +336,7 @@ async function connect(url) {
 }
 
 // Every mint opens a tab, so every mint closes it. Left open, they piled up in one
-// headless Chrome that ran for days, each GitHub page with its own renderer (#6). The
+// headless Chrome that ran for days, each GitHub page with its own renderer (#6).
 // A concurrent mint cannot have a tab because startChrome refuses an occupied port.
 // The browser goes too once this run has closed its last non-new-tab page.
 async function closeTab(tab) {

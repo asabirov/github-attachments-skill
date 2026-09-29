@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- **Concurrent Chrome runs.** The Chrome driver now takes an exclusive profile lock so simultaneous runs cannot share one browser, and takes over locks whose process is gone (#17).
+
 - **Chrome port and process cleanup.** The Chrome driver now refuses to attach when port 9375 is already in use and kills the Chrome process it launched on success, failure, and timeout (#15).
 
 - **Chrome discovery on Linux.** The Chrome driver now accepts `GH_ATTACH_CHROME`, finds the usual Chrome and Chromium executables on PATH, and reports exit code 3 with an actionable message when no executable is available (#5).
