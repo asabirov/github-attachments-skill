@@ -89,11 +89,13 @@ Once the v0.1.0 release exists, install the tagged skill with:
 DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-skill/tree/v0.1.0 --skill github-attachments --agent claude-code codex --global
 ```
 
-`DO_NOT_TRACK=1` tells the skills CLI not to send telemetry. The `npx skills` installer requires Node.js/npm and Git. If you prefer not to use `npx skills`, install from a checkout or a Git submodule pinned to the `v0.1.0` release tag, then expose that checkout as the `github-attachments` skill; to update or roll back, check out another release tag, and to remove it, delete the link or submodule. Update to a later release tag with the same command and its new tag. Roll back by rerunning it with the previous release tag. Remove it with:
+`DO_NOT_TRACK=1` tells the skills CLI not to send telemetry. The `npx skills` installer requires Node.js/npm and Git. Update to a later release tag with the same command and its new tag. Roll back by rerunning it with the previous release tag. Remove it with:
 
 ```bash
 DO_NOT_TRACK=1 npx skills remove github-attachments --agent claude-code codex --global
 ```
+
+If you prefer not to use `npx skills`, install from a checkout or a Git submodule pinned to the `v0.1.0` release tag, then expose that checkout as the `github-attachments` skill; to update or roll back, check out another release tag, and to remove it, delete the link or submodule.
 
 ## License
 
