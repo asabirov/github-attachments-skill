@@ -18,6 +18,7 @@ The Orca driver also requires the `file` utility on PATH for MIME detection.
 The tool has no npm dependencies. Its Chrome driver currently expects Chrome at the standard macOS application path.
 
 Clone `asabirov/github-attachments-skill` and run the commands from the repository root. To use it from an agent, expose the checkout as the `github-attachments` skill. The agent instructions are in [SKILL.md](SKILL.md).
+The skill version lives in `metadata.version` in [SKILL.md](SKILL.md).
 
 ```bash
 # Outside Orca: opens Chrome for a one-time GitHub sign-in.
@@ -80,11 +81,21 @@ The polling shell entry point also runs the Orca driver suite. These tests use s
 
 For changes, open an issue, work on a branch, run the tests, and submit a pull request. Keep credentials, browser profiles, and private attachments out of the repository.
 
-## Install and roll back
+## Install (not yet published), update, roll back, and remove
 
-Use a checkout or submodule pinned to a reviewed commit. Before updating, record the current revision so you can restore it if necessary.
+Once the v0.1.0 release exists, install the tagged skill with:
 
-To uninstall the skill, remove the skill link or submodule. Make source changes in a branch rather than editing an installed skill copy.
+```bash
+DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-skill/tree/v0.1.0 --skill github-attachments --agent claude-code codex --global
+```
+
+`DO_NOT_TRACK=1` tells the skills CLI not to send telemetry. The `npx skills` installer requires Node.js/npm and Git. Update to a later release tag with the same command and its new tag. Roll back by rerunning it with the previous release tag. Remove it with:
+
+```bash
+DO_NOT_TRACK=1 npx skills remove github-attachments --agent claude-code codex --global
+```
+
+If you prefer not to use `npx skills`, install from a checkout or a Git submodule pinned to the `v0.1.0` release tag, then expose that checkout as the `github-attachments` skill; to update or roll back, check out another release tag, and to remove it, delete the link or submodule.
 
 ## License
 

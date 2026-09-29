@@ -1,6 +1,8 @@
 ---
 name: github-attachments
 description: "Attach an image or PDF to a GitHub issue, PR, or comment without committing it to the repository. Returns a GitHub attachment URL; images render inline and PDFs render as download links. Use when a screenshot, a diagram, a before-and-after or any picture belongs in something you are about to file or open. Trigger on: attach a PDF, upload homework files to an issue, attach a screenshot, put this image in the issue, add a picture to the PR, screenshot in the PR body, show the before and after, upload an image to GitHub, embed an image in a comment, the image does not render, my attachment 404s."
+metadata:
+  version: "0.1.0"
 ---
 
 # github-attachments
