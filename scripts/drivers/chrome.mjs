@@ -258,6 +258,7 @@ try {
 			console.log(got.url);
 			break;
 		}
+		if (got?.state === "refused") fail(8, got.error);
 		if (Date.now() > deadline) fail(7, `gave up after ${timeoutMs / 1000}s waiting for GitHub to return an asset URL`);
 		await pause(500);
 	}

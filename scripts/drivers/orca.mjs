@@ -66,9 +66,8 @@ async function upload(target, base64, name, mime, timeoutMs, storageKey, expecte
     if (!pasted.ok) return { code: 6, error: `Editor did not accept the paste: ${pasted.reason}` };
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      if (helper.editors()[0]?.value.includes('<!-- Failed to upload'))
-        return { code: 8, error: 'GitHub refused the upload (probably a rate limit); wait and retry later' };
       const result = helper.harvest();
+      if (result.state === 'refused') return { code: 8, error: result.error };
       if (result.state === 'done') return { code: 0, url: result.url };
       await pause();
     }
