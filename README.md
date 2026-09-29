@@ -81,9 +81,9 @@ The polling shell entry point also runs the Orca driver suite. These tests use s
 
 For changes, open an issue, work on a branch, run the tests, and submit a pull request. Keep credentials, browser profiles, and private attachments out of the repository.
 
-## Install (not yet published), update, roll back, and remove
+## Install, update, roll back, and remove
 
-Once the v0.1.0 release exists, install the tagged skill with:
+Install the tagged skill with:
 
 ```bash
 DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-skill/tree/v0.1.0 --skill github-attachments --agent claude-code codex --global
