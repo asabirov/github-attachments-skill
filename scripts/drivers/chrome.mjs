@@ -18,13 +18,13 @@ import { execFileSync, spawn } from "node:child_process";
 import { accessSync, constants, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { createConnection } from "node:net";
-import { homedir } from "node:os";
+import * as os from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIB = join(HERE, "..", "..", "lib", "paste.js");
-const PROFILE = join(homedir(), ".claude", "state", "github-attachments", "chrome-profile");
+const PROFILE = join(os.homedir(), ".claude", "state", "github-attachments", "chrome-profile");
 const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const PORT = 9375; // Not 9222: that port is browser-tools', shared by every session here.
 let chromeChild = null;
@@ -93,6 +93,13 @@ function stopChromeSync() {
 		process.kill(-chromeChild.pid, "SIGTERM");
 	} catch {}
 	chromeChild = null;
+}
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+	process.once(signal, () => {
+		stopChromeSync();
+		process.exit(128 + os.constants.signals[signal]);
+	});
 }
 
 async function stopChrome() {
@@ -192,8 +199,8 @@ async function connect(url) {
 
 // Every mint opens a tab, so every mint closes it. Left open, they piled up in one
 // headless Chrome that ran for days, each GitHub page with its own renderer (#6). The
-// browser goes too once nothing else is using it; a concurrent mint's tab, even one
-// still on about:blank, keeps it alive. chrome://newtab/ is Chrome's own.
+// A concurrent mint cannot have a tab because startChrome refuses an occupied port.
+// The browser goes too once this run has closed its last non-new-tab page.
 async function closeTab(tab) {
 	tab.close();
 	try {
