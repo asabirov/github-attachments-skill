@@ -79,6 +79,7 @@ These checks happen before a browser starts. An oversized image previously cause
 | 5 | no usable comment editor — repo missing, invisible, or issues disabled; or the box already has text (a saved draft or a prefilled issue template), which is left untouched |
 | 6 | the editor ignored the paste |
 | 7 | the upload never returned a URL within `--timeout` |
+| 8 | GitHub refused the upload (Orca driver), probably because of a rate limit; wait and retry later |
 
 Signed-out status has its own exit code because it looks exactly like a failed upload but has a one-command fix.
 
