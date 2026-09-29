@@ -12,10 +12,10 @@ Local file → signed-in browser → GitHub attachment URL → issue, PR, or com
 You need Bash, Node.js 21 or later, and one of these browser options:
 
 - Orca with a signed-in GitHub browser session
-- Google Chrome on macOS
+- Google Chrome on macOS or Linux
 
 The Orca driver also requires the `file` utility on PATH for MIME detection.
-The tool has no npm dependencies. Its Chrome driver currently expects Chrome at the standard macOS application path.
+The tool has no npm dependencies. On macOS, the Chrome driver tries the standard application path. On Linux, set `GH_ATTACH_CHROME` to the Chrome executable or let the driver find `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser` on PATH.
 
 Clone `asabirov/github-attachments-skill` and run the commands from the repository root. To use it from an agent, expose the checkout as the `github-attachments` skill. The agent instructions are in [SKILL.md](SKILL.md).
 The skill version lives in `metadata.version` in [SKILL.md](SKILL.md).
