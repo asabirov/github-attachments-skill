@@ -84,7 +84,7 @@ A PDF is refused the same way, by its name and then by its own first bytes, so a
 | 4 | that browser is not signed in to GitHub |
 | 5 | the repository could not be read — missing, invisible, or issues disabled; or, with a browser driver, the editor box already has text (a saved draft or a prefilled issue template), which is left untouched |
 | 6 | the editor ignored the paste |
-| 7 | no attachment URL came back **after the bytes went out**, so the upload may have landed: it timed out, the transport failed mid-request, or it reported success with no URL in the answer. Retrying can leave a second asset behind. A failure before anything was sent is 3, not this |
+| 7 | no attachment URL came back **after the bytes went out**, so the upload may have landed: it timed out, the transport failed mid-request, it reported success with no URL in the answer, or `gh-mint` was stopped, signalled, or exited in a way this skill does not recognise. Retrying can leave a second asset behind. A failure before anything was sent is 3, not this |
 | 8 | the upload was refused and nothing was uploaded — by GitHub (a rate limit, or a token this endpoint does not accept), or by the broker that holds the token |
 | 9 | no token upload is available here, or none for this file; `auto` reads this as its cue to start a browser, never as a failure |
 

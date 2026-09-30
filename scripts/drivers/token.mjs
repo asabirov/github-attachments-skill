@@ -93,11 +93,16 @@ if (process.env.ORCA_GH_BROKER_PORT) {
   if (minted.error?.code !== 'ENOENT') {
     if (minted.stderr) writeSync(2, minted.stderr);
     if (minted.error) {
-      // A kill after the deadline is not the same as never starting: the bytes may
-      // already be at the broker, so that one is 7 and this one is 3.
-      fail(minted.error.code === 'ETIMEDOUT' ? 7 : 3, minted.error.code === 'ETIMEDOUT'
-        ? `gh-mint did not answer within ${budget}s`
-        : `gh-mint could not be run: ${minted.error.code}`);
+      // Only a gh-mint that never reached exec can be said to have sent nothing.
+      // ETIMEDOUT and ENOBUFS both arrive with the child already running -- Node
+      // kills it for taking too long, or for saying more than maxBuffer holds -- so
+      // the file may be at the broker, and those are 7. Anything unrecognised errs
+      // the same way, because 7 is the code that warns of a duplicate.
+      const neverRan = ['ENOENT', 'EACCES', 'ENOEXEC', 'EPERM'].includes(minted.error.code);
+      fail(neverRan ? 3 : 7,
+        minted.error.code === 'ETIMEDOUT' ? `gh-mint did not answer within ${budget}s`
+          : neverRan ? `gh-mint could not be run: ${minted.error.code}`
+          : `gh-mint was stopped while running (${minted.error.code}); the upload may still have happened`);
     }
     const url = (minted.stdout || '').trim();
     if (minted.status === 0 && ASSET.test(url)) succeed(url);
@@ -148,8 +153,10 @@ if (!/^[0-9]+$/.test(id)) {
   // Only the status is taken out of gh's answer, never the text. gh's stderr is the
   // one place a credential could surface -- `GH_DEBUG=api` prints request headers --
   // and a 404 against a 403 is all the caller needs to tell a wrong name from a
-  // login that cannot see the repository.
-  const status = /\b(\d{3})\b/.exec(oneline(lookup.stderr, 200));
+  // login that cannot see the repository. Anchored to `HTTP` rather than taking the
+  // first three digits it finds, which under that same debug output would happily
+  // report `per_page=100` as the status.
+  const status = /\bHTTP\/?[\d.]*\s*(\d{3})\b/i.exec(oneline(lookup.stderr, 200));
   fail(5, `cannot read the numeric id of ${repo}${status ? ` (gh answered HTTP ${status[1]})` : ''}; check the name and that this login can see it`);
 }
 
@@ -170,10 +177,17 @@ try {
     signal: AbortSignal.timeout(left()),
   });
 } catch (error) {
-  // 7, not 3: the request was dispatched, so the bytes may have arrived.
-  fail(7, error.name === 'TimeoutError'
-    ? `the upload did not finish within ${budget}s`
-    : `the upload to GitHub did not complete: ${error.message}`);
+  // A connection never made sent nothing, so that is 3. Once the request is away the
+  // bytes may have arrived, which makes a timeout or a mid-flight failure 7. Only a
+  // name that would not resolve is reliably told apart here: a refused connection
+  // reaches this catch with `cause.code` undefined, so it lands on 7. That is the
+  // safe direction -- 7 warns of a duplicate that cannot exist, where the reverse
+  // would hide one that can.
+  const unreached = ['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED'].includes(error.cause?.code);
+  fail(unreached ? 3 : 7,
+    error.name === 'TimeoutError' ? `the upload did not finish within ${budget}s`
+      : unreached ? `could not reach ${new URL(UPLOAD).host}: ${error.cause.code}`
+      : `the upload to GitHub did not complete: ${error.message}`);
 }
 
 const said = await answer.text().catch(() => '');
