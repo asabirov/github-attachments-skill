@@ -20,6 +20,8 @@
 
 - **Bad input reported as bad input.** A `--timeout` outside 1 to 3600 whole seconds, and a file that exists but cannot be read, are now named with exit code 2. Both previously reached past the argument checks and came back as a raw interpreter error with exit code 1. The upper bound matters as much as the rest: a number too large for a double arrived in Node as `Infinity` and failed the same way a word did (#3).
 
+- **A note on checking a URL you just minted.** An attachment that nothing references yet answers 404 even in a public repository, and 302 as soon as it is embedded, so a `curl` straight after minting looks like a failure and is not one (#3).
+
 - **The documented way to check a public attachment URL.** The skill said the plain URL answers `200 image/png`. It answers **302** to a signed S3 URL that expires in 300 seconds, and a `HEAD` gets **403** at that step, so `curl -I` on a perfectly good attachment looked broken (#3).
 
 - **Concurrent Chrome runs.** The Chrome driver now takes an exclusive profile lock so simultaneous runs cannot share one browser, and takes over locks whose process is gone (#17).

@@ -39,6 +39,8 @@ For a **public** repository the plain URL does fetch the file, but through a red
 gh api repos/OWNER/REPO/pulls/N -H 'Accept: application/vnd.github.html+json' --jq .body_html
 ```
 
+**A freshly minted URL 404s until something references it.** Measured on 2026-09-30: an asset minted into a *public* repository and not yet embedded anywhere answered **404**; the same URL answered **302** to its signed S3 location the moment it appeared in a pull request body. So a `curl` straight after minting looks like a failed upload and is not one. Mint, embed, then check.
+
 **The asset belongs to a repository, not to you.** GitHub records the `repository_id` at upload time — from the paste page, or from the token upload's query — so `--repo` is required and must be correct. If you mint the asset against repository A and embed it in repository B, it renders for you but returns 404 for your reader.
 
 **Do not send the file bytes through a conversation.** `mint.sh` must keep accepting a path and printing a URL. A 416 KB screenshot becomes 554,756 base64 characters—about 150k tokens in an agent's context—to accomplish what a path accomplishes with about 200 tokens. For the same reason, do not `Read` an image before uploading it. You do not need to view it.
