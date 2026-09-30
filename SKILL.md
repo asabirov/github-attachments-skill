@@ -62,7 +62,7 @@ It accepts PNG, JPEG, GIF and WebP. The type is chosen from the file name and ch
 
 These checks happen before upload. An oversized image used to upload for a minute and then time out. Because GitHub checks size after transfer, this skill rejects it first.
 
-A PDF is refused by its name and then by its first bytes, so a PDF without a suffix is also caught. This skill uploads images; GitHub's token upload refuses PDFs, and a document belongs in a document store that you can link to. GitHub would refuse it too, with a `422` measured in #3, but as an exit 8 the caller has to interpret; refused here, the message names the reason and the bytes never leave the machine.
+A PDF is refused by its name and then by its first bytes, so a PDF without a suffix is also caught. This skill uploads images, and a document belongs in a document store that you can link to. GitHub's token upload refuses a PDF as well — a `422`, measured in #3 — but that arrives as an exit 8 the caller has to interpret, and only after the bytes have left the machine.
 
 | Exit | Means |
 | --- | --- |
