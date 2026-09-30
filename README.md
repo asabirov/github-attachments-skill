@@ -78,6 +78,15 @@ The polling shell entry point also runs the Orca driver suite. These tests use s
 
 For changes, open an issue, work on a branch, run the tests, and submit a pull request. Keep credentials, browser profiles, and private attachments out of the repository.
 
+## Release
+
+This repository releases by hand, so the step that creates a release tag also updates the README. Both move together:
+
+1. In the release commit, set `metadata.version` in [SKILL.md](SKILL.md) to the new version, move the CHANGELOG's `Unreleased` entries under a heading for that version, and replace the tag in the install command and in the pinned-tag note below with the new tag.
+2. Merge that commit, then tag it `vMAJOR.MINOR.PATCH` and publish the GitHub release from the same commit.
+
+Do not merge a release commit and leave the tag for later: the README must never name a tag that has not been released. This rule comes from [asabirov/better-skill-creator-skill#29](https://github.com/asabirov/better-skill-creator-skill/issues/29).
+
 ## Install, update, roll back, and remove
 
 Install the tagged skill with:
