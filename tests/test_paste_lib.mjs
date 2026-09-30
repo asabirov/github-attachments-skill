@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Repository names, attachment IDs and document names are synthetic offline fixtures.
+// Repository names and attachment IDs are synthetic offline fixtures.
 // The paste library, exercised against a fake DOM rather than a real GitHub.
 //
 // These are the branches that decide whether a failure is legible. Every one of them was
@@ -175,14 +175,6 @@ it("harvest distinguishes uploading from pending from done", () => {
 	const done = lib.harvest();
 	assert.equal(done.state, "done");
 	assert.equal(done.uuid, "00000000-0000-4000-8000-000000000000");
-});
-
-it("harvest returns a complete PDF URL including an encoded filename", () => {
- const s = makeDom({ textareas: [{ id: "new_comment_field" }] });
- const lib = load(s);
- const url = "https://github.com/user-attachments/files/0000000000/synthetic%20document.pdf";
- s.setUploaded(`[grammar.pdf](${url})`);
- assert.deepEqual(lib.harvest(), { state: "done", url });
 });
 
 it("clear goes through the prototype setter, which is what React watches", () => {

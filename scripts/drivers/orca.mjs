@@ -127,7 +127,7 @@ try {
     }
     code = result.code === 9 ? 3 : result.code;
     if (code === 0) {
-      if (!/^https:\/\/github\.com\/user-attachments\/(assets\/[0-9a-f-]{36}|files\/\d+\/[^\s)"<>]+)$/.test(result.url))
+      if (!/^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]{36}$/.test(result.url))
         throw Error('Upload returned no valid attachment URL');
       process.stdout.write(result.url + '\n');
     } else console.error(`orca: ${result.error || 'Upload failed'}`);

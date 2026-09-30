@@ -1,13 +1,13 @@
 ---
 name: github-attachments
-description: "Attach an image or PDF to a GitHub issue, PR, or comment without committing it to the repository. Returns a GitHub attachment URL; images render inline and PDFs render as download links. Use when a screenshot, a diagram, a before-and-after or any picture belongs in something you are about to file or open. Trigger on: attach a PDF, upload homework files to an issue, attach a screenshot, put this image in the issue, add a picture to the PR, screenshot in the PR body, show the before and after, upload an image to GitHub, embed an image in a comment, the image does not render, my attachment 404s."
+description: "Attach an image to a GitHub issue, PR, or comment without committing it to the repository. Returns a GitHub attachment URL that renders inline. Use when a screenshot, a diagram, a before-and-after or any picture belongs in something you are about to file or open. Trigger on: attach a screenshot, put this image in the issue, add a picture to the PR, screenshot in the PR body, show the before and after, upload an image to GitHub, embed an image in a comment, the image does not render, my attachment 404s."
 metadata:
   version: "0.1.0"
 ---
 
 # github-attachments
 
-Give the command a file path to get an image or PDF URL for any issue, pull request, or comment in the named repository.
+Give the command a file path to get an image URL for any issue, pull request, or comment in the named repository.
 
 ```bash
 scripts/mint.sh shot.png --repo example-owner/example-repo
@@ -59,11 +59,7 @@ Port **9375**, not 9222, avoids other sessions' browsers. Before launch, the dri
 
 The Orca driver ties upload and cleanup to the page ID it created, checks the target repository URL, and parses only structured result fields. Paste, polling, and draft cleanup happen in one browser evaluation because separate Orca evaluations may lose page state. Node.js builds the request without printing image bytes. Large transfers use bounded arguments; the Chrome driver has no CLI argument transfer.
 
-### PDF documents
-
-Use the same command with a `.pdf` path. Preserve the full PDF URL: `https://github.com/user-attachments/files/<id>/<filename>`. `--format markdown` returns a normal link, and `--format html` returns an anchor. Images continue to render inline. The helper keeps its conservative 10 MB file limit for both images and PDFs.
-
-The Orca driver stages large files in bounded calls within its own tab before pasting. It uses a unique origin-storage key for staging and checks the SHA-256 hash before pasting. Cleanup is retried on exit, with a warning naming the key if it cannot be verified. Browser origin-storage quota can limit large transfers; if staging fails, the driver returns no URL. The Chrome driver does not use this staging path.
+It stages large files in bounded calls within its own tab before pasting, under a unique origin-storage key, and checks their SHA-256 hash before the paste. Cleanup is retried on exit, with a warning naming the key if it cannot be verified. Browser origin-storage quota can limit large transfers; if staging fails, the driver returns no URL.
 
 ### The one manual step
 
@@ -73,9 +69,11 @@ GitHub's upload requires a session, which no script can create: it needs a passw
 
 These checks happen before a browser starts. An oversized image previously caused a costly failure: it uploaded for a minute and then timed out. GitHub checks the size *after* the transfer, so this skill rejects the file before uploading it.
 
+A PDF is refused the same way, by its name and then by its own first bytes, so a PDF saved without a suffix is caught too. This skill uploads images; GitHub's token upload refuses PDFs outright, and a document belongs in a document store you can link to rather than in an attachment. Letting one through would not be a harmless no-op: GitHub takes the upload and hands back a `user-attachments/files/` URL this skill no longer reads, so the caller would pay the whole transfer and then wait out `--timeout`. Nothing else about a file's type is checked.
+
 | Exit | Means |
 | --- | --- |
-| 2 | bad arguments, missing file, `--repo` not `owner/name`, or over GitHub's 10 MB limit |
+| 2 | bad arguments, missing file, `--repo` not `owner/name`, a PDF, or over GitHub's 10 MB limit |
 | 3 | no browser could be opened, the DevTools port is already in use, or the page did not finish loading within `--timeout` |
 | 4 | that browser is not signed in to GitHub |
 | 5 | no usable comment editor — repo missing, invisible, or issues disabled; or the box already has text (a saved draft or a prefilled issue template), which is left untouched |
@@ -99,7 +97,7 @@ Both editor types accept a paste. Classic issue and pull-request pages use texta
 tests/mint-cli.test.sh                    # what it refuses, all before a browser starts
 tests/polling-survives-uploading.test.sh  # actual driver: page isolation, pending upload, and refusals
 node tests/test_paste_lib.mjs             # the paste library against a fake DOM
-node --test tests/orca-driver.test.mjs   # PDF/image output, large transfers and cleanup
+node --test tests/orca-driver.test.mjs   # image output, large transfers and cleanup
 ```
 
 None accesses the network. The polling shell entry point runs the Orca driver suite. Check end-to-end by using the skill: mint an image, put it in a body, and read the rendered body back.

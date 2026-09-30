@@ -413,7 +413,7 @@ const mime = name.toLowerCase().endsWith(".png")
 			? "image/gif"
 			: /\.webp$/i.test(name)
 				? "image/webp"
-				: /\.pdf$/i.test(name) ? "application/pdf" : "application/octet-stream";
+				: "application/octet-stream";
 
 await startChrome();
 const tab = await connect(target);

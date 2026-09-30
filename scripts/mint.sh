@@ -42,6 +42,25 @@ case "$repo" in
 	*) echo "mint: --repo wants owner/name, got '$repo'" >&2; exit 2 ;;
 esac
 
+# GitHub's token upload refuses PDFs outright, and documents belong in a document
+# store, not in an issue body. Refused here so no browser ever starts for one.
+#
+# The name is asked first and the file's own first bytes second, because letting one
+# through is not a harmless no-op: GitHub takes the upload and returns a files/ URL
+# this skill no longer reads, so the caller pays the whole transfer and then waits
+# out --timeout for a URL that is never coming.
+#
+# Those bytes are compared as hex, not as text. A JPEG and a WebP both carry a null
+# byte inside their first five, and a command substitution holding one makes bash
+# warn on stderr -- on every successful upload of an image that was never in doubt.
+is_pdf=false
+case "$image" in *.[pP][dD][fF]) is_pdf=true ;; esac
+if [ "$(head -c 5 "$image" | od -A n -t x1 | tr -d ' \n')" = "255044462d" ]; then is_pdf=true; fi
+if $is_pdf; then
+	echo "mint: $image is a PDF, and this skill uploads images only; keep documents in a document store and link to them" >&2
+	exit 2
+fi
+
 # GitHub refuses images over 10 MB, and it refuses them after the upload rather than
 # before, which reads from here as a mysterious timeout.
 bytes="$(wc -c < "$image" | tr -d ' ')"
@@ -70,15 +89,11 @@ case "$attachment" in
     https://github.com/user-attachments/*) url="$attachment" ;;
     *) url="https://github.com/user-attachments/assets/$attachment" ;;
 esac
-is_pdf=false
-case "$image" in *.[pP][dD][fF]) is_pdf=true ;; esac
-if [ -z "$alt" ]; then
-    if $is_pdf; then alt="$(basename "$image")"; else alt="$(basename "${image%.*}")"; fi
-fi
+[ -n "$alt" ] || alt="$(basename "${image%.*}")"
 
 case "$format" in
 	url)      printf '%s\n' "$url" ;;
-	markdown) if $is_pdf; then printf '[%s](%s)\n' "$alt" "$url"; else printf '![%s](%s)\n' "$alt" "$url"; fi ;;
-	html)     if $is_pdf; then printf '<a href="%s">%s</a>\n' "$url" "$alt"; else printf '<img alt="%s" src="%s" />\n' "$alt" "$url"; fi ;;
+	markdown) printf '![%s](%s)\n' "$alt" "$url" ;;
+	html)     printf '<img alt="%s" src="%s" />\n' "$alt" "$url" ;;
 	*)        echo "mint: --format wants url, markdown or html" >&2; exit 2 ;;
 esac
