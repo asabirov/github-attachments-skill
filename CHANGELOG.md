@@ -2,12 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- **Uploads without a browser.** Where a `gh` login or the GitHub broker's `gh-mint` is available, the helper uploads the image with it in one request, and `--driver auto` tries that before any browser. A remote host with neither a browser nor a signed-in session can now mint; the browser drivers stay as the fallback (#3).
+
+- **Exit codes 7 and 9.** 7 means the bytes went out and no URL came back, so a retry can leave a second asset behind; 8 now covers every failure where nothing was uploaded and a retry is safe. 9 means there is no token upload here, and tells `--driver auto` to use a browser (#3).
+
 ### Removed
 
 - **PDF uploads.** The helper now uploads images only. A PDF is refused before any browser starts, by its name or its own first bytes, with exit code 2 and a message naming the reason. GitHub's token upload refuses PDFs outright, and a document belongs in a document store you can link to (#19).
   Action: If you were uploading PDFs, store them elsewhere and put the link in your issue or pull request.
 
 ### Fixed
+
+- **Bad input and attachment checks.** A `--timeout` outside 1 to 3600 seconds and an unreadable file now exit 2 instead of a raw interpreter error, and the documented way to check a public attachment URL is corrected: it answers **302** to a signed S3 URL, and `HEAD` gets **403** at that step (#3).
 
 - **Concurrent Chrome runs.** The Chrome driver now takes an exclusive profile lock so simultaneous runs cannot share one browser, and takes over locks whose process is gone (#17).
 

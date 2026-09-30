@@ -2,7 +2,7 @@
 # Turn a local image into a GitHub attachment URL.
 #
 #   mint.sh <image> --repo <owner/name> [--alt TEXT] [--format url|markdown|html]
-#           [--driver auto|orca|chrome] [--timeout SECONDS]
+#           [--driver auto|token|orca|chrome] [--timeout SECONDS]
 #
 # Takes a path and prints a URL. It never accepts image bytes and never prints them,
 # because in an agent harness the signature is the cost model: a 400 KB screenshot is
@@ -36,11 +36,24 @@ done
 [ -n "$image" ] || { usage >&2; exit 2; }
 [ -n "$repo" ]  || { echo "mint: --repo <owner/name> is required, and decides who can see the image" >&2; exit 2; }
 [ -f "$image" ] || { echo "mint: no such file: $image" >&2; exit 2; }
+# Before the PDF check below, which is the first thing to touch the bytes and would
+# otherwise leave bash's own `Permission denied` and exit 1.
+[ -r "$image" ] || { echo "mint: cannot read $image; check its permissions" >&2; exit 2; }
 
+# One slash, both parts non-empty, and no path segments: this string is sent to a
+# broker that resolves it, so `..` must never survive the check.
 case "$repo" in
+	*/*/*|/*|*/|*..*|"") echo "mint: --repo wants owner/name, got '$repo'" >&2; exit 2 ;;
 	*/*) ;;
 	*) echo "mint: --repo wants owner/name, got '$repo'" >&2; exit 2 ;;
 esac
+
+# Bounded at both ends, because a driver hands this straight to Node: `0` is not a
+# wait, and a number too big for a double arrives there as Infinity. Length is tested
+# first so bash is never asked to compare a 400-digit number.
+bad_timeout() { echo "mint: --timeout wants 1 to 3600 whole seconds, got '${timeout_s:0:20}'" >&2; exit 2; }
+case "$timeout_s" in ''|*[!0-9]*|?????*) bad_timeout ;; esac
+[ "$timeout_s" -ge 1 ] && [ "$timeout_s" -le 3600 ] || bad_timeout
 
 # GitHub's token upload refuses PDFs outright, and documents belong in a document
 # store, not in an issue body. Refused here so no browser ever starts for one.
@@ -69,21 +82,30 @@ if [ "$bytes" -gt 10485760 ]; then
 	exit 2
 fi
 
-# Orca's browser is already signed in, so it costs nobody a login. The Chrome driver is
-# what makes this work when Orca is closed, and it is the one that needs `login.sh` first.
+# The token driver needs no browser and is the only path on a headless host. Exit 9
+# means it has no way to upload here, which is not an error, so its reason is kept
+# back and a browser takes over.
+minted=false
 if [ "$driver" = auto ]; then
-	if [ -n "${ORCA_WORKTREE_ID:-}" ] && command -v orca >/dev/null 2>&1; then
-		driver=orca
-	else
-		driver=chrome
-	fi
+	why="$(mktemp)"; trap 'rm -f "$why"' EXIT
+	status=0
+	attachment="$(node "$here/scripts/drivers/token.mjs" "$image" "$repo" "$timeout_s" 2>"$why")" || status=$?
+	[ "$status" = 9 ] || cat "$why" >&2
+	case "$status" in
+		0) minted=true ;;
+		9) if [ -n "${ORCA_WORKTREE_ID:-}" ] && command -v orca >/dev/null 2>&1; then driver=orca; else driver=chrome; fi ;;
+		*) exit "$status" ;;
+	esac
 fi
 
-case "$driver" in
-	orca)   attachment="$("$here/scripts/drivers/orca.sh" "$image" "$repo" "$timeout_s")" ;;
-	chrome) attachment="$(node "$here/scripts/drivers/chrome.mjs" "$image" "$repo" "$timeout_s")" ;;
-	*)      echo "mint: --driver wants auto, orca or chrome" >&2; exit 2 ;;
-esac
+if ! $minted; then
+	case "$driver" in
+		token)  attachment="$(node "$here/scripts/drivers/token.mjs" "$image" "$repo" "$timeout_s")" ;;
+		orca)   attachment="$("$here/scripts/drivers/orca.sh" "$image" "$repo" "$timeout_s")" ;;
+		chrome) attachment="$(node "$here/scripts/drivers/chrome.mjs" "$image" "$repo" "$timeout_s")" ;;
+		*)      echo "mint: --driver wants auto, token, orca or chrome" >&2; exit 2 ;;
+	esac
+fi
 
 case "$attachment" in
     https://github.com/user-attachments/*) url="$attachment" ;;

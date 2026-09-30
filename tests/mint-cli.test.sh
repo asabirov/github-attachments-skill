@@ -37,7 +37,7 @@ check "missing --repo is named"          2 "--repo <owner/name>" -- "$mint" "$tm
 check "missing file is named"            2 "no such file"        -- "$mint" "$tmp/absent.png" --repo a/b
 check "bare repo name is refused"        2 "wants owner/name"    -- "$mint" "$tmp/tiny.png" --repo notaslug
 check "unknown flag is refused"          2 "unknown flag"        -- "$mint" "$tmp/tiny.png" --repo a/b --nope
-check "unknown driver is refused"        2 "auto, orca or chrome" -- "$mint" "$tmp/tiny.png" --repo a/b --driver ie6
+check "unknown driver is refused"        2 "auto, token, orca or chrome" -- "$mint" "$tmp/tiny.png" --repo a/b --driver ie6
 
 # Images only, and refused before a browser starts: GitHub would accept a PDF upload
 # and hand back a files/ URL this skill no longer reads, so the caller would pay the
