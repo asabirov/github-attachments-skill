@@ -2,7 +2,7 @@
 # Turn a local image into a GitHub attachment URL.
 #
 #   mint.sh <image> --repo <owner/name> [--alt TEXT] [--format url|markdown|html]
-#           [--driver auto|orca|chrome] [--timeout SECONDS]
+#           [--driver auto|token|orca|chrome] [--timeout SECONDS]
 #
 # Takes a path and prints a URL. It never accepts image bytes and never prints them,
 # because in an agent harness the signature is the cost model: a 400 KB screenshot is
@@ -69,21 +69,39 @@ if [ "$bytes" -gt 10485760 ]; then
 	exit 2
 fi
 
-# Orca's browser is already signed in, so it costs nobody a login. The Chrome driver is
-# what makes this work when Orca is closed, and it is the one that needs `login.sh` first.
+# A token upload comes first: one request, no browser, and the only path open on a
+# host with no display. Exit 9 from that driver means there is no token path here,
+# or none for this file, and a browser is the answer rather than an error.
+minted=false
 if [ "$driver" = auto ]; then
-	if [ -n "${ORCA_WORKTREE_ID:-}" ] && command -v orca >/dev/null 2>&1; then
-		driver=orca
-	else
-		driver=chrome
-	fi
+	why="$(mktemp)"; trap 'rm -f "$why"' EXIT
+	status=0
+	attachment="$(node "$here/scripts/drivers/token.mjs" "$image" "$repo" "$timeout_s" 2>"$why")" || status=$?
+	# Only "there is no token path here" is held back, because in `auto` it is not
+	# news. Anything else that driver said belongs on stderr, uploaded or not.
+	[ "$status" = 9 ] || cat "$why" >&2
+	case "$status" in
+		0) minted=true ;;
+		# Orca's browser is already signed in, so it costs nobody a login. The Chrome
+		# driver is what makes this work when Orca is closed, and it is the one that
+		# needs `login.sh` first.
+		9) if [ -n "${ORCA_WORKTREE_ID:-}" ] && command -v orca >/dev/null 2>&1; then
+				driver=orca
+			else
+				driver=chrome
+			fi ;;
+		*) exit "$status" ;;
+	esac
 fi
 
-case "$driver" in
-	orca)   attachment="$("$here/scripts/drivers/orca.sh" "$image" "$repo" "$timeout_s")" ;;
-	chrome) attachment="$(node "$here/scripts/drivers/chrome.mjs" "$image" "$repo" "$timeout_s")" ;;
-	*)      echo "mint: --driver wants auto, orca or chrome" >&2; exit 2 ;;
-esac
+if ! $minted; then
+	case "$driver" in
+		token)  attachment="$(node "$here/scripts/drivers/token.mjs" "$image" "$repo" "$timeout_s")" ;;
+		orca)   attachment="$("$here/scripts/drivers/orca.sh" "$image" "$repo" "$timeout_s")" ;;
+		chrome) attachment="$(node "$here/scripts/drivers/chrome.mjs" "$image" "$repo" "$timeout_s")" ;;
+		*)      echo "mint: --driver wants auto, token, orca or chrome" >&2; exit 2 ;;
+	esac
+fi
 
 case "$attachment" in
     https://github.com/user-attachments/*) url="$attachment" ;;

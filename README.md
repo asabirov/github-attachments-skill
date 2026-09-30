@@ -4,17 +4,19 @@ Upload images to GitHub issues, pull requests, and comments from an AI coding ag
 
 ```text
 Workflow diagram
-Local file → signed-in browser → GitHub attachment URL → issue, PR, or comment
+Local file → a GitHub token, or a signed-in browser → GitHub attachment URL → issue, PR, or comment
 ```
 
 ## Quick start
 
-You need Bash, Node.js 21 or later, and one of these browser options:
+You need Bash, Node.js 21 or later, and one of these ways to reach GitHub:
 
-- Orca with a signed-in GitHub browser session
-- Google Chrome on macOS or Linux
+- A `gh` login on this machine. Nothing else to set up, and no browser is involved.
+- On an Orca remote host, the GitHub broker's `gh-mint` command. The host holds no credential: the bytes go to the machine that does, which uploads them and returns the URL.
+- Orca with a signed-in GitHub browser session.
+- Google Chrome on macOS or Linux.
 
-The Orca driver also requires the `file` utility on PATH for MIME detection.
+The first two need no display, so they are the only ones that work on a headless host. The Orca driver also requires the `file` utility on PATH for MIME detection.
 The tool has no npm dependencies. On macOS, the Chrome driver tries the standard application path. On Linux, set `GH_ATTACH_CHROME` to the Chrome executable or let the driver find `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser` on PATH.
 
 Clone `asabirov/github-attachments-skill` and run the commands from the repository root. To use it from an agent, expose the checkout as the `github-attachments` skill. The agent instructions are in [SKILL.md](SKILL.md).
@@ -28,7 +30,7 @@ scripts/login.sh
 scripts/mint.sh screenshot.png --repo example-owner/example-repo --format markdown
 ```
 
-When running inside Orca, skip `login.sh`. The helper uses Orca's existing browser session instead.
+`login.sh` is only for the Chrome fallback. Skip it where a `gh` login or the broker's `gh-mint` is available, and skip it inside Orca, which has a signed-in browser session already.
 
 The command uploads the file and prints Markdown that you can paste into an issue, pull request, or comment in the same repository. It does not submit the issue or comment.
 
@@ -42,18 +44,19 @@ By default, the command prints a URL. Use the following options when you need a 
 
 - `--format markdown` or `--format html` returns an embeddable link.
 - `--alt` sets the alternative text for the link.
-- `--driver orca|chrome` selects the browser driver.
+- `--driver token|orca|chrome` pins one driver instead of letting `auto` choose.
 - `--timeout` sets the upload wait time in seconds. The default is `60`.
 
 ## Why it exists
 
 Screenshots are often useful in a review discussion but do not belong in the repository's Git history. This helper accepts a local image and returns a GitHub attachment URL, allowing an agent or developer to add visual evidence without sending the file bytes through the conversation.
 
-The helper uses GitHub's own paste handler in a signed-in browser. The resulting link can be used in an issue, pull request, or comment; the caller decides where to place it.
+Where a token is reachable, the helper uploads the file with it in one request. Otherwise it falls back to GitHub's own paste handler in a signed-in browser. The resulting link can be used in an issue, pull request, or comment; the caller decides where to place it.
 
 ## Limits and authentication
 
-- You need a signed-in browser with access to the target repository. This is not a token-only CI uploader, and the repository must have its issue editor enabled.
+- You need write access to the target repository, held either as a `gh` login (or the broker's `gh-mint`) or as a signed-in browser. A browser upload also needs the repository's issue editor enabled.
+- The token upload takes PNG, JPEG, GIF and WebP, chosen by the file name. Any other image falls back to a browser, which can paste it.
 - Upload the file to the repository where you will use the link. Private image references may require GitHub's rendered page to display correctly, so a direct fetch is not a reliable verification method.
 - Images only. A PDF is refused before any browser starts, by its name or its first bytes; keep documents in a document store and link to them.
 - Files are limited to 10 MB. Orca stages large files in browser origin storage, so browser quota can limit uploads. Chrome transfers files through the DevTools Protocol.
