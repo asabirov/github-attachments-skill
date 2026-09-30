@@ -21,6 +21,8 @@
 
 ### Fixed
 
+- **A value flag with no value.** `--repo`, `--alt`, `--format`, `--driver` and `--timeout` given with nothing after them now exit 2 and name the flag. Each one read an unset argument under `set -u` and exited 1 with bash's own `$2: unbound variable`. The exit table in SKILL.md is corrected too: `gh-mint` refusing a file is an exit 2, not an exit 8 (#25).
+
 - **Bad input and attachment checks.** A `--timeout` outside 1 to 3600 seconds and an unreadable file now exit 2 instead of a raw interpreter error, and the documented way to check a public attachment URL is corrected: it answers **302** to a signed S3 URL, and `HEAD` gets **403** at that step (#3).
 
 ## 0.1.0 — 2026-09-29
