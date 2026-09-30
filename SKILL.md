@@ -25,7 +25,7 @@ Repository names and attachment IDs in these examples are synthetic placeholders
 
 *Commit the file into the repository* — save it in `.github/pr-screenshots/` and link to the blob. Rejected because the image would remain in git history forever, even though it describes something true for only one afternoon. Readers outside a private repository would also see nothing.
 
-*Drive a browser and nothing else.* That was the design until GitHub's token upload arrived; `lib/paste.js` holds the 422 that made a browser the only key at the time. The token upload takes images only, so a browser is still the fallback.
+*Drive a browser and nothing else.* That was the design until GitHub's token upload arrived; `lib/paste.js` holds the 422 that made a browser the only key at the time. A browser is still the fallback, for machines that have no token and no broker to reach one.
 
 ## Three things that can mislead you
 
@@ -51,7 +51,7 @@ gh api repos/OWNER/REPO/pulls/N -H 'Accept: application/vnd.github.html+json' --
 | `orca` | no token, `ORCA_WORKTREE_ID` is set and `orca` is on PATH | Node.js and `file` on PATH; uses the Orca browser session, exits 4 if signed out |
 | `chrome` | no token, and Orca is not there | `scripts/login.sh`, once |
 
-The token driver opens no browser, so it is the only one that works on a machine with no display. Where `gh` has a login it uploads the file itself; where it has none it runs `gh-mint <file> --repo OWNER/REPO`, and the broker on the machine that holds the token uploads for it. A host needs one of those two and nothing else. It takes PNG, JPEG, GIF and WebP by file name, and anything else it leaves to a browser. `--timeout` bounds the whole driver.
+The token driver opens no browser, so it is the only one that works on a machine with no display. Where `gh` has a login it uploads the file itself; where it has none it runs `gh-mint <file> --repo OWNER/REPO`, and the broker on the machine that holds the token uploads for it. A host needs one of those two and nothing else. It takes PNG, JPEG, GIF and WebP, chosen by file name and checked against the first bytes it is about to upload, so a symlink with an image name cannot publish something else. `--timeout` bounds the driver, except that `gh-mint` is always given 150s, because the broker behind it can take 120.
 
 Chrome runs headless without additional dependencies. It uses `GH_ATTACH_CHROME` when set, then looks for `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser` on PATH (and the standard macOS app path). If none is executable, it exits 3 with an actionable message. It uses Node's global `WebSocket` (since v21) to speak the DevTools Protocol. It avoids coupling to another skill's `node_modules` by not importing puppeteer from `browser-tools`. It uses `~/.claude/state/github-attachments/chrome-profile`, not `~/.cache/browser-tools`: every Claude session on this machine shares that cache, so a live GitHub session there would let any session act as you.
 
@@ -73,13 +73,13 @@ A PDF is refused the same way, by its name and then by its own first bytes, so a
 
 | Exit | Means |
 | --- | --- |
-| 2 | bad arguments, a missing or unreadable file, `--repo` not `owner/name`, a `--timeout` outside 1 to 3600 whole seconds, a PDF, or over GitHub's 10 MB limit |
+| 2 | bad arguments, a missing or unreadable file, `--repo` not `owner/name`, a `--timeout` outside 1 to 3600 whole seconds, a PDF, over GitHub's 10 MB limit, or bytes that do not match the name's type |
 | 3 | no browser could be opened, the DevTools port is already in use, or the page did not finish loading within `--timeout` |
 | 4 | that browser is not signed in to GitHub |
 | 5 | no usable comment editor — repo missing, invisible, or issues disabled; or the box already has text (a saved draft or a prefilled issue template), which is left untouched |
 | 6 | the editor ignored the paste |
-| 7 | no URL came back after the bytes went out, so the upload may have landed: retrying can leave a second asset behind |
-| 8 | the upload failed and nothing was uploaded, so a retry is safe: GitHub or the broker refused it, or `gh` could not read the repository |
+| 7 | the bytes went out and no URL came back, so the upload may have landed and retrying can leave a second asset behind. A `5xx` from GitHub counts: it can arrive after the asset was stored |
+| 8 | the upload failed before anything was stored, so a retry is safe: GitHub or the broker refused it, or `gh` could not read the repository |
 | 9 | no token upload here, or not for this file; `auto` reads this as its cue to start a browser |
 
 Signed-out status has its own exit code because it looks exactly like a failed upload but has a one-command fix.

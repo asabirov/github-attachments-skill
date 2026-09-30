@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # The one thing here a human has to do, and it is done once.
 #
-# GitHub's attachment upload authenticates with a session cookie and a CSRF token. A
-# personal access token cannot stand in: tried 2026-09-03 against a real repository id,
-# POST github.com/upload/policies/assets answered 422 with GitHub's generic error page
-# rather than a policy. So a browser somewhere has to be signed in, and no script can
-# sign it in — that is a password and a second factor.
+# Only the browser drivers need this. A token upload needs no sign-in at all, so run
+# this when there is no `gh` login and no broker to reach one. The browser route
+# authenticates with a session cookie and a CSRF token, and no script can create one —
+# that is a password and a second factor.
 #
 # This opens a visible Chrome against the profile this skill owns. Sign in, close the
 # window, and every later run is headless and unattended until the session expires.

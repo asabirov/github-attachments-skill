@@ -40,7 +40,10 @@ done
 # otherwise leave bash's own `Permission denied` and exit 1.
 [ -r "$image" ] || { echo "mint: cannot read $image; check its permissions" >&2; exit 2; }
 
+# One slash, both parts non-empty, and no path segments: this string is sent to a
+# broker that resolves it, so `..` must never survive the check.
 case "$repo" in
+	*/*/*|/*|*/|*..*|"") echo "mint: --repo wants owner/name, got '$repo'" >&2; exit 2 ;;
 	*/*) ;;
 	*) echo "mint: --repo wants owner/name, got '$repo'" >&2; exit 2 ;;
 esac
