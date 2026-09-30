@@ -83,58 +83,78 @@ if (!type) {
   fail(9, `${basename(image)} is not a PNG, JPEG, GIF or WebP by name, and GitHub's token upload takes nothing else`);
 }
 
-// The broker's mint verb is asked for first. A host that has it holds no token of
-// its own -- `gh` there is a shim, and its `auth token` is refused by design --
-// so reading a token first would cost a pointless round trip on every run.
-if (process.env.ORCA_GH_BROKER_PORT) {
+// A readable token is asked for first, and `gh` itself is the only honest way to
+// ask. ORCA_GH_BROKER_PORT is not the signal it looks like: bin/setup renders that
+// port inside the installed gh-mint, which exports it on its own second line, so no
+// shell on a host ever has it set. Gating the broker path on it meant that path
+// could never run anywhere -- the bug this order fixes.
+//
+// Asking gh first also keeps a machine that holds its own token off the broker path,
+// where a gh-mint from a checkout rather than from bin/setup would have no port to
+// use and would refuse. On a host the question costs one refused shim call, a
+// fraction of a second, because `gh auth token` is not an allowed subcommand there
+// by design. gh's stderr is deliberately not read here, being the one answer that
+// carries a credential.
+const auth = gh(['auth', 'token']);
+// A gh that hung has eaten the deadline, and going on to gh-mint with a millisecond
+// left would blame gh-mint for gh's silence. A gh that is simply absent or refuses
+// is the ordinary answer "no token here", and falls through. Nothing has been sent
+// either way, so this is 3.
+if (auth.error?.code === 'ETIMEDOUT') {
+  fail(3, `gh did not answer within ${budget}s when asked for a token`);
+}
+const token = auth.status === 0 ? auth.stdout.trim() : '';
+
+// No token on this machine, so the broker on the machine that has one is the way in.
+// It is handed a path and returns a URL; the bytes go to the controller, and this
+// host never holds a credential.
+if (!token) {
   const minted = spawnSync('gh-mint', [image, '--repo', repo], {
     encoding: 'utf8', timeout: left(), maxBuffer: 256 * 1024,
   });
-  if (minted.error?.code !== 'ENOENT') {
-    if (minted.stderr) writeSync(2, minted.stderr);
-    if (minted.error) {
-      // Asked the way round that stays complete: these two are the only codes
-      // spawnSync invents for a child it started and then killed -- one for taking
-      // longer than the deadline, one for saying more than maxBuffer holds -- so the
-      // file may be at the broker and they are 7. Every other code comes from fork
-      // or exec failing, where nothing ran and nothing was sent. Listing the
-      // opposite side instead would mean keeping an errno catalogue up to date, and
-      // a name missing from it would be reported as an upload that never happened.
-      const ran = ['ETIMEDOUT', 'ENOBUFS'].includes(minted.error.code);
-      fail(ran ? 7 : 3,
-        minted.error.code === 'ETIMEDOUT' ? `gh-mint did not answer within ${budget}s`
-          : ran ? `gh-mint was stopped while running (${minted.error.code}); the upload may still have happened`
-          : `gh-mint could not be run: ${minted.error.code}`);
-    }
-    const url = (minted.stdout || '').trim();
-    if (minted.status === 0 && ASSET.test(url)) succeed(url);
-    // Exit 0 without a URL is the worst answer of the lot: the asset may well exist
-    // and only its URL was lost, so this is 7 rather than 8, and 7 warns that a
-    // retry can leave a second asset behind.
-    if (minted.status === 0) fail(7, `gh-mint reported success without an attachment URL: ${oneline(url, 120)}`);
-    // gh-mint's own refusals (64) name the file and what to do about it, and
-    // burying that behind a later browser failure -- on a host that has no
-    // browser -- helps nobody, so this stops rather than falling back.
-    if (minted.status === 64) fail(2, 'gh-mint refused the file; see its message above');
-    if (minted.status === 77) fail(8, 'the broker holding the token refused this upload');
-    // 75 is gh-mint failing to encode the file, which it does before sending
-    // anything, so nothing can have been uploaded. An exit this driver does not
-    // know stays at 7, because an upload cannot be ruled out.
-    if (minted.status === 75) fail(3, 'gh-mint could not prepare the file; nothing was sent');
-    fail(7, minted.signal
-      ? `gh-mint was killed by ${minted.signal} without an attachment URL`
-      : `gh-mint exited ${minted.status} without an attachment URL`);
+  // Neither a token nor a way to reach one: 9, so `auto` tries a browser.
+  if (minted.error?.code === 'ENOENT') {
+    fail(9, 'no gh login here, and no gh-mint to reach the broker that holds one');
   }
-}
-
-// The token is read before anything else: without one there is nothing to do here,
-// and that is exit 9 -- a browser's job -- rather than a failure of this path. gh's
-// stderr is deliberately not quoted here, being the one answer that carries a
-// credential.
-const auth = gh(['auth', 'token']);
-const token = auth.status === 0 ? auth.stdout.trim() : '';
-if (!token) {
-  fail(9, 'no gh login here and no broker mint verb, so there is no token to upload with');
+  if (minted.stderr) writeSync(2, minted.stderr);
+  if (minted.error) {
+    // Asked the way round that stays complete: these two are the only codes
+    // spawnSync invents for a child it started and then killed -- one for taking
+    // longer than the deadline, one for saying more than maxBuffer holds -- so the
+    // file may be at the broker and they are 7. Every other code comes from fork
+    // or exec failing, where nothing ran and nothing was sent. Listing the
+    // opposite side instead would mean keeping an errno catalogue up to date, and
+    // a name missing from it would be reported as an upload that never happened.
+    const ran = ['ETIMEDOUT', 'ENOBUFS'].includes(minted.error.code);
+    fail(ran ? 7 : 3,
+      minted.error.code === 'ETIMEDOUT' ? `gh-mint did not answer within ${budget}s`
+        : ran ? `gh-mint was stopped while running (${minted.error.code}); the upload may still have happened`
+        : `gh-mint could not be run: ${minted.error.code}`);
+  }
+  const url = (minted.stdout || '').trim();
+  if (minted.status === 0 && ASSET.test(url)) succeed(url);
+  // Exit 0 without a URL is the worst answer of the lot: the asset may well exist
+  // and only its URL was lost, so this is 7 rather than 8, and 7 warns that a
+  // retry can leave a second asset behind.
+  if (minted.status === 0) fail(7, `gh-mint reported success without an attachment URL: ${oneline(url, 120)}`);
+  // gh-mint's own refusals (64) name the file and what to do about it, and
+  // burying that behind a later browser failure -- on a host that has no
+  // browser -- helps nobody, so this stops rather than falling back.
+  if (minted.status === 64) fail(2, 'gh-mint refused the file; see its message above');
+  if (minted.status === 77) fail(8, 'the broker holding the token refused this upload');
+  // 75 is gh-mint failing to encode the file, which it does before sending
+  // anything, so nothing can have been uploaded. An exit this driver does not
+  // know stays at 7, because an upload cannot be ruled out.
+  //
+  // 69 is deliberately not among these. gh-mint gives it three meanings: a port it
+  // was never told, which sends nothing, but also no answer and a malformed answer
+  // from the broker, both of which come after the bytes have gone. Ambiguous, so it
+  // keeps the code that warns of a duplicate; its own message, relayed above, says
+  // which of the three happened.
+  if (minted.status === 75) fail(3, 'gh-mint could not prepare the file; nothing was sent');
+  fail(7, minted.signal
+    ? `gh-mint was killed by ${minted.signal} without an attachment URL`
+    : `gh-mint exited ${minted.status} without an attachment URL`);
 }
 
 // The asset is bound to this id at upload time, which is why --repo is required:
