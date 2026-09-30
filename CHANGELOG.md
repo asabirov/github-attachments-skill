@@ -4,26 +4,24 @@
 
 ### Added
 
-- **Uploads without a browser.** Where a `gh` login or the GitHub broker's `gh-mint` is available, the helper uploads the image with it in one request, and `--driver auto` tries that before any browser. A remote host with neither a browser nor a signed-in session can now mint; the browser drivers stay as the fallback (#3).
+- **Uploads without a browser.** Where a `gh` login or the GitHub broker's `gh-mint` is available, the helper uploads the image with it in one request. A host with no browser, no display and no signed-in session can mint (#3).
 
-- **Exit codes 7 and 9.** 7 means the bytes went out and no URL came back, so a retry can leave a second asset behind; 8 now covers every failure where nothing was uploaded and a retry is safe. 9 means there is no token upload here, and tells `--driver auto` to use a browser (#3).
+- **Exit codes 7 and 9.** 7 means the bytes went out and no URL came back, so a retry can leave a second asset behind. 8 covers every failure where nothing was uploaded and a retry is safe. 9 means this machine cannot mint this file: it has no `gh` login and no `gh-mint`, or the file is not named PNG, JPEG, GIF or WebP (#3, #22).
 
 ### Removed
 
-- **PDF uploads.** The helper now uploads images only. A PDF is refused before any browser starts, by its name or its own first bytes, with exit code 2 and a message naming the reason. GitHub's token upload refuses PDFs outright, and a document belongs in a document store you can link to (#19).
+- **The browser upload drivers.** Every upload now goes through a `gh` login or `gh-mint`, so `--driver chrome` and `--driver orca` are gone, along with the Chrome profile and its lock, port 9375, the paste library, the one-time `scripts/login.sh` sign-in, exit codes 3 to 6, and the unreleased fixes made to them (#5, #9, #15, #17). Nothing needs a browser, a display or a signed-in session any more (#22).
+  Action: On a machine with neither a `gh` login nor `gh-mint`, install one of them. If you pinned `--driver chrome` or `--driver orca`, drop the flag; both now exit 2 with a message naming the removal. If you signed in with 0.1.0, delete `~/.claude/state/github-attachments/chrome-profile`: it holds a live GitHub session that nothing uses, refreshes or clears now.
+
+- **SVG and video uploads.** A browser could paste anything GitHub's editor accepted. The token upload takes PNG, JPEG, GIF and WebP, and nothing this skill is for needs the other two (#22).
+  Action: Render a diagram to PNG instead of SVG before minting it.
+
+- **PDF uploads.** The helper now uploads images only. A PDF is refused before any upload, by its name or its own first bytes, with exit code 2 and a message naming the reason. GitHub's token upload refuses PDFs outright, and a document belongs in a document store you can link to (#19).
   Action: If you were uploading PDFs, store them elsewhere and put the link in your issue or pull request.
 
 ### Fixed
 
 - **Bad input and attachment checks.** A `--timeout` outside 1 to 3600 seconds and an unreadable file now exit 2 instead of a raw interpreter error, and the documented way to check a public attachment URL is corrected: it answers **302** to a signed S3 URL, and `HEAD` gets **403** at that step (#3).
-
-- **Concurrent Chrome runs.** The Chrome driver now takes an exclusive profile lock so simultaneous runs cannot share one browser, and takes over locks whose process is gone (#17).
-
-- **Chrome port and process cleanup.** The Chrome driver now refuses to attach when port 9375 is already in use and kills the Chrome process it launched on success, failure, and timeout (#15).
-
-- **Chrome discovery on Linux.** The Chrome driver now accepts `GH_ATTACH_CHROME`, finds the usual Chrome and Chromium executables on PATH, and reports exit code 3 with an actionable message when no executable is available (#5).
-
-- **Refused uploads in Chrome.** When GitHub refuses an upload, the Chrome driver now stops at once with exit code 8 and the same message as the Orca driver, instead of waiting for its timeout and reporting a generic failure (#9).
 
 ## 0.1.0 — 2026-09-29
 
