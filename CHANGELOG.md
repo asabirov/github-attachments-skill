@@ -4,10 +4,10 @@
 
 ### Added
 
-- **Token uploads, with no browser at all.** Where a `gh` login is readable, the helper now uploads the image with it in one request, and `--driver auto` tries that before any browser. On an Orca remote host, which holds no GitHub credential, it calls the GitHub broker's `gh-mint` instead, so the machine that does hold the token performs the upload and sends back only the URL. Which of the two runs is decided by asking `gh` for a token, nothing else. A remote host therefore no longer needs a browser or a signed-in session, which is what made this unusable there (#3).
-  Action: Nothing to set up where `gh` is already signed in. The browser drivers stay as the fallback, so keep using `login.sh` for Chrome.
+- **Token uploads, with no browser at all.** If a `gh` login is available, the helper uploads the image in one request, and `--driver auto` tries this before any browser. On an Orca remote host, which has no GitHub credential, it calls the GitHub broker's `gh-mint`. The machine holding the token uploads the image and returns only the URL. The helper chooses between these methods by asking `gh` for a token. A remote host therefore no longer needs a browser or a signed-in session, which is what made this unusable there (#3).
+  Action: Nothing needs setting up where `gh` is already signed in. Browser drivers remain available as fallbacks, so use `login.sh` for Chrome.
 
-- **Exit code 7 now warns you not to retry blindly.** It means the bytes went out and no attachment URL came back, so the upload may have landed and a retry can leave a second asset behind. Exit code 8 keeps the opposite meaning: refused, and nothing was uploaded. A failure before anything is sent — `gh` or `gh-mint` unable to run — is exit code 3, which also covers a browser that could not be opened (#3).
+- **Exit code 7 now warns you not to retry blindly.** The bytes were sent, but no attachment URL came back. The upload may have succeeded, so retrying can create a second asset. Exit code 8 still means the upload was refused and nothing was uploaded. If `gh` or `gh-mint` cannot run before anything is sent, the exit code is 3; this also covers a browser that could not be opened (#3).
 
 - **Exit code 9.** The token driver reports 9 when no token upload is available here, or none for this file — an SVG, for instance, which only a browser can paste. `--driver auto` reads it as its cue to fall back to a browser rather than as a failure; `--driver token` shows you the reason (#3).
 
@@ -18,7 +18,7 @@
 
 ### Fixed
 
-- **Bad input reported as bad input.** A `--timeout` outside 1 to 3600 whole seconds, and a file that exists but cannot be read, are now named with exit code 2. Both previously reached past the argument checks and came back as a raw interpreter error with exit code 1. The upper bound matters as much as the rest: a number too large for a double arrived in Node as `Infinity` and failed the same way a word did (#3).
+- **Bad input reported as bad input.** A `--timeout` outside 1 to 3600 whole seconds, or an existing file that cannot be read, now returns exit code 2. Previously, both passed the argument checks and produced a raw interpreter error with exit code 1. The upper limit is important: a number too large for a double became `Infinity` in Node and failed like a word did (#3).
 
 - **A note on checking a URL you just minted.** An attachment that nothing references yet answers 404 even in a public repository, and 302 as soon as it is embedded, so a `curl` straight after minting looks like a failure and is not one (#3).
 

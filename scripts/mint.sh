@@ -36,8 +36,8 @@ done
 [ -n "$image" ] || { usage >&2; exit 2; }
 [ -n "$repo" ]  || { echo "mint: --repo <owner/name> is required, and decides who can see the image" >&2; exit 2; }
 [ -f "$image" ] || { echo "mint: no such file: $image" >&2; exit 2; }
-# Named too, because the first thing to touch the bytes is the PDF check below, and
-# an unreadable file there leaves a raw `Permission denied` from bash and exit 1.
+# Before the PDF check below, which is the first thing to touch the bytes and would
+# otherwise leave bash's own `Permission denied` and exit 1.
 [ -r "$image" ] || { echo "mint: cannot read $image; check its permissions" >&2; exit 2; }
 
 case "$repo" in
@@ -45,11 +45,9 @@ case "$repo" in
 	*) echo "mint: --repo wants owner/name, got '$repo'" >&2; exit 2 ;;
 esac
 
-# Named here rather than left to a driver, because a driver hands the value straight
-# to Node, which answers with a stack trace and an exit code this skill does not
-# document. Bounded at both ends: `0` and `00` are not a wait, and a number too big
-# for a double reaches Node as Infinity, which fails the same way as a word. The
-# length test comes first so bash is never asked to compare a 400-digit number.
+# Bounded at both ends, because a driver hands this straight to Node: `0` is not a
+# wait, and a number too big for a double arrives there as Infinity. Length is tested
+# first so bash is never asked to compare a 400-digit number.
 bad_timeout() { echo "mint: --timeout wants 1 to 3600 whole seconds, got '${timeout_s:0:20}'" >&2; exit 2; }
 case "$timeout_s" in ''|*[!0-9]*|?????*) bad_timeout ;; esac
 [ "$timeout_s" -ge 1 ] && [ "$timeout_s" -le 3600 ] || bad_timeout
@@ -82,21 +80,20 @@ if [ "$bytes" -gt 10485760 ]; then
 fi
 
 # A token upload comes first: one request, no browser, and the only path open on a
-# host with no display. Exit 9 from that driver means there is no token path here,
-# or none for this file, and a browser is the answer rather than an error.
+# host with no display. Exit 9 from it means no token path here, which calls for a
+# browser rather than an error.
 minted=false
 if [ "$driver" = auto ]; then
 	why="$(mktemp)"; trap 'rm -f "$why"' EXIT
 	status=0
 	attachment="$(node "$here/scripts/drivers/token.mjs" "$image" "$repo" "$timeout_s" 2>"$why")" || status=$?
-	# Only "there is no token path here" is held back, because in `auto` it is not
-	# news. Anything else that driver said belongs on stderr, uploaded or not.
+	# Exit 9 is not news in `auto`, so its reason is held back. Anything else the
+	# driver said belongs on stderr, uploaded or not.
 	[ "$status" = 9 ] || cat "$why" >&2
 	case "$status" in
 		0) minted=true ;;
-		# Orca's browser is already signed in, so it costs nobody a login. The Chrome
-		# driver is what makes this work when Orca is closed, and it is the one that
-		# needs `login.sh` first.
+		# Orca's browser is already signed in; Chrome is the answer when Orca is
+		# closed, and the one that needs `login.sh` first.
 		9) if [ -n "${ORCA_WORKTREE_ID:-}" ] && command -v orca >/dev/null 2>&1; then
 				driver=orca
 			else
