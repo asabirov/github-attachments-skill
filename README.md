@@ -85,7 +85,7 @@ This repository releases by hand, so the step that creates a release tag also up
 1. In the release commit, set `metadata.version` in [SKILL.md](SKILL.md) to the new version, move the CHANGELOG's `Unreleased` entries under a heading for that version, and replace the tag in the install command and in the pinned-tag note below with the new tag.
 2. Merge that commit only when you are ready to tag, then tag the commit it produced on `main` as `vMAJOR.MINOR.PATCH` and publish the GitHub release from that tag.
 
-The README on `main` names the new tag from the moment the release commit lands, so merging and tagging are one step: never merge a release commit you are not about to tag. The rule comes from [asabirov/better-skill-creator-skill#29](https://github.com/asabirov/better-skill-creator-skill/issues/29).
+The README on `main` names the new tag as soon as the release commit lands, so tagging is the next action after the merge and not a later one. The rule comes from [asabirov/better-skill-creator-skill#29](https://github.com/asabirov/better-skill-creator-skill/issues/29).
 
 ## Install, update, roll back, and remove
 
