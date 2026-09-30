@@ -7,7 +7,7 @@
 - **Token uploads, with no browser at all.** Where a `gh` login is readable, the helper now uploads the image with it in one request, and `--driver auto` tries that before any browser. On an Orca remote host, which holds no GitHub credential, it calls the GitHub broker's `gh-mint` instead, so the machine that does hold the token performs the upload and sends back only the URL. A remote host therefore no longer needs a browser or a signed-in session, which is what made this unusable there (#3).
   Action: Nothing to set up where `gh` is already signed in. The browser drivers stay as the fallback, so keep using `login.sh` for Chrome.
 
-- **Exit code 7 now warns you not to retry blindly.** It means no attachment URL came back and the upload may still have landed, so a retry can leave a second asset behind. Exit code 8 keeps the opposite meaning: refused, and nothing was uploaded (#3).
+- **Exit code 7 now warns you not to retry blindly.** It means the bytes went out and no attachment URL came back, so the upload may have landed and a retry can leave a second asset behind. Exit code 8 keeps the opposite meaning: refused, and nothing was uploaded. A failure before anything is sent — `gh` or `gh-mint` unable to run — is exit code 3, which also covers a browser that could not be opened (#3).
 
 - **Exit code 9.** The token driver reports 9 when no token upload is available here, or none for this file — an SVG, for instance, which only a browser can paste. `--driver auto` reads it as its cue to fall back to a browser rather than as a failure; `--driver token` shows you the reason (#3).
 
@@ -18,7 +18,7 @@
 
 ### Fixed
 
-- **Bad input reported as bad input.** A `--timeout` that is not a whole number of seconds, and a file that exists but cannot be read, are now named with exit code 2. Both previously reached past the argument checks and came back as a raw interpreter error with exit code 1 (#3).
+- **Bad input reported as bad input.** A `--timeout` outside 1 to 3600 whole seconds, and a file that exists but cannot be read, are now named with exit code 2. Both previously reached past the argument checks and came back as a raw interpreter error with exit code 1. The upper bound matters as much as the rest: a number too large for a double arrived in Node as `Infinity` and failed the same way a word did (#3).
 
 - **The documented way to check a public attachment URL.** The skill said the plain URL answers `200 image/png`. It answers **302** to a signed S3 URL that expires in 300 seconds, and a `HEAD` gets **403** at that step, so `curl -I` on a perfectly good attachment looked broken (#3).
 

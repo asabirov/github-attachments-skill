@@ -19,13 +19,6 @@ import { basename, extname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const [image, repo, timeout] = process.argv.slice(2);
-// `--timeout` is the caller's deadline for the whole driver, not for each step. The
-// local path makes three calls, so giving each one the full budget would let a slow
-// machine take three times what the caller asked for. 1ms rather than 0 for an
-// exhausted budget, because 0 means "no timeout" to spawnSync and throws in
-// AbortSignal.timeout; a 1ms deadline fails at once, which is what is wanted.
-const deadline = Date.now() + Number(timeout) * 1000;
-const left = () => Math.max(1, deadline - Date.now());
 
 const UPLOAD = 'https://uploads.github.com/user-attachments/assets';
 
@@ -68,6 +61,20 @@ function oneline(text, limit = 300) {
   return (text || '').replace(/\s+/g, ' ').trim().slice(0, limit);
 }
 
+// `--timeout` is the caller's deadline for the whole driver, not for each step. The
+// local path makes three calls, so giving each one the full budget would let a slow
+// machine take three times what the caller asked for. mint.sh bounds the value; it
+// is bounded again here because Node answers an out-of-range timeout with a stack
+// trace, and this driver can be run on its own.
+const budget = Number(timeout);
+if (!Number.isInteger(budget) || budget < 1 || budget > 3600) {
+  fail(2, `--timeout wants 1 to 3600 whole seconds, got '${String(timeout).slice(0, 20)}'`);
+}
+const deadline = Date.now() + budget * 1000;
+// 1ms rather than 0 for an exhausted budget: 0 means "no timeout" to spawnSync, and
+// AbortSignal.timeout throws on it. A 1ms deadline fails at once, which is wanted.
+const left = () => Math.max(1, deadline - Date.now());
+
 // The type gate comes before the path choice, so an image kind neither path can
 // upload leaves the browser drivers free to try: GitHub's editor does paste an
 // SVG. Every refusal below this line is about the file itself and stops the run.
@@ -86,8 +93,10 @@ if (process.env.ORCA_GH_BROKER_PORT) {
   if (minted.error?.code !== 'ENOENT') {
     if (minted.stderr) writeSync(2, minted.stderr);
     if (minted.error) {
-      fail(7, minted.error.code === 'ETIMEDOUT'
-        ? `gh-mint did not answer within ${timeout}s`
+      // A kill after the deadline is not the same as never starting: the bytes may
+      // already be at the broker, so that one is 7 and this one is 3.
+      fail(minted.error.code === 'ETIMEDOUT' ? 7 : 3, minted.error.code === 'ETIMEDOUT'
+        ? `gh-mint did not answer within ${budget}s`
         : `gh-mint could not be run: ${minted.error.code}`);
     }
     const url = (minted.stdout || '').trim();
@@ -101,6 +110,10 @@ if (process.env.ORCA_GH_BROKER_PORT) {
     // browser -- helps nobody, so this stops rather than falling back.
     if (minted.status === 64) fail(2, 'gh-mint refused the file; see its message above');
     if (minted.status === 77) fail(8, 'the broker holding the token refused this upload');
+    // 75 is gh-mint failing to encode the file, which it does before sending
+    // anything, so nothing can have been uploaded. An exit this driver does not
+    // know stays at 7, because an upload cannot be ruled out.
+    if (minted.status === 75) fail(3, 'gh-mint could not prepare the file; nothing was sent');
     fail(7, minted.signal
       ? `gh-mint was killed by ${minted.signal} without an attachment URL`
       : `gh-mint exited ${minted.status} without an attachment URL`);
@@ -123,14 +136,21 @@ if (!token) {
 // see, and reporting the second for the first sends the reader to check a name that
 // was never the problem.
 const lookup = gh(['api', `repos/${repo}`, '--jq', '.id']);
+// This happens before a single byte is sent, so it is never 7: that code promises
+// the upload may have landed, and here there was no upload to land.
 if (lookup.error) {
-  fail(7, lookup.error.code === 'ETIMEDOUT'
-    ? `gh did not answer within ${timeout}s when asked for the id of ${repo}`
+  fail(3, lookup.error.code === 'ETIMEDOUT'
+    ? `gh did not answer within ${budget}s when asked for the id of ${repo}`
     : `gh could not be run to read the id of ${repo}: ${lookup.error.code}`);
 }
 const id = lookup.stdout.trim();
 if (!/^[0-9]+$/.test(id)) {
-  fail(5, `cannot read the numeric id of ${repo}: ${oneline(lookup.stderr) || `gh answered ${oneline(id, 60) || 'nothing'}`}`);
+  // Only the status is taken out of gh's answer, never the text. gh's stderr is the
+  // one place a credential could surface -- `GH_DEBUG=api` prints request headers --
+  // and a 404 against a 403 is all the caller needs to tell a wrong name from a
+  // login that cannot see the repository.
+  const status = /\b(\d{3})\b/.exec(oneline(lookup.stderr, 200));
+  fail(5, `cannot read the numeric id of ${repo}${status ? ` (gh answered HTTP ${status[1]})` : ''}; check the name and that this login can see it`);
 }
 
 let bytes;
@@ -150,8 +170,9 @@ try {
     signal: AbortSignal.timeout(left()),
   });
 } catch (error) {
+  // 7, not 3: the request was dispatched, so the bytes may have arrived.
   fail(7, error.name === 'TimeoutError'
-    ? `the upload did not finish within ${timeout}s`
+    ? `the upload did not finish within ${budget}s`
     : `the upload to GitHub did not complete: ${error.message}`);
 }
 

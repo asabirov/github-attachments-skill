@@ -45,12 +45,14 @@ case "$repo" in
 	*) echo "mint: --repo wants owner/name, got '$repo'" >&2; exit 2 ;;
 esac
 
-# Named here rather than left to a driver, because a driver hands a non-numeric
-# timeout straight to Node, which answers with a stack trace and an exit code this
-# skill does not document.
-case "$timeout_s" in
-	''|*[!0-9]*|0) echo "mint: --timeout wants a whole number of seconds, got '$timeout_s'" >&2; exit 2 ;;
-esac
+# Named here rather than left to a driver, because a driver hands the value straight
+# to Node, which answers with a stack trace and an exit code this skill does not
+# document. Bounded at both ends: `0` and `00` are not a wait, and a number too big
+# for a double reaches Node as Infinity, which fails the same way as a word. The
+# length test comes first so bash is never asked to compare a 400-digit number.
+bad_timeout() { echo "mint: --timeout wants 1 to 3600 whole seconds, got '${timeout_s:0:20}'" >&2; exit 2; }
+case "$timeout_s" in ''|*[!0-9]*|?????*) bad_timeout ;; esac
+[ "$timeout_s" -ge 1 ] && [ "$timeout_s" -le 3600 ] || bad_timeout
 
 # GitHub's token upload refuses PDFs outright, and documents belong in a document
 # store, not in an issue body. Refused here so no browser ever starts for one.

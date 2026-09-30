@@ -55,7 +55,7 @@ gh api repos/OWNER/REPO/pulls/N -H 'Accept: application/vnd.github.html+json' --
 
 The token driver opens no browser, so it is the only one that works on a host with no display, and it is one request where the others are a browser launch and a poll loop. It takes PNG, JPEG, GIF and WebP, decided by the file name: the name and the content type travel together in the upload's query, so a sniffed type that disagreed with the name would publish a `.png` link to JPEG bytes. Any other image — an SVG, say — leaves `auto` to a browser, whose paste handler does take it. That type check happens before either token path is tried.
 
-Where a `gh` login is readable, the driver uploads the bytes itself: `gh auth token` for the credential first, because without one there is nothing to do here, then `gh api repos/OWNER/REPO --jq .id` for the numeric repository id, then a `POST` to `https://uploads.github.com/user-attachments/assets`. The token is never printed, never logged and never passed as an argument, and a redirect is not followed while it is attached, because that would re-send it wherever the redirect points. The answer's URL is matched on its own shape, not read from a named field, because the field name is not documented.
+Where a `gh` login is readable, the driver uploads the bytes itself: `gh auth token` for the credential first, because without one there is nothing to do here, then `gh api repos/OWNER/REPO --jq .id` for the numeric repository id, then a `POST` to `https://uploads.github.com/user-attachments/assets`. The token is never printed, never logged and never passed as an argument, and a redirect is not followed while it is attached, because that would re-send it wherever the redirect points. Nor is `gh`'s own stderr ever quoted back: `GH_DEBUG=api` makes `gh` print request headers, so only the HTTP status is lifted out of a failed repository lookup, which is all that separates a wrong name from a login that cannot see the repository. The answer's URL is matched on its own shape, not read from a named field, because the field name is not documented.
 
 A remote host holds no GitHub credential at all, so there the same driver calls `gh-mint <file> --repo OWNER/REPO` and the broker on the machine that does hold the token uploads the bytes and sends back only the URL ([orca-remote-hosts-skill#122](https://github.com/asabirov/orca-remote-hosts-skill/issues/122)). That path is asked for first whenever `ORCA_GH_BROKER_PORT` is set, because `gh` on such a host is a shim whose `auth token` is refused by design, so reading a token first would cost a pointless round trip on every run. `--timeout` bounds the whole driver, not each step: the local path makes three calls and they share one deadline. It is shorter by default than `gh-mint`'s own deadlines.
 
@@ -79,12 +79,12 @@ A PDF is refused the same way, by its name and then by its own first bytes, so a
 
 | Exit | Means |
 | --- | --- |
-| 2 | bad arguments, a missing or unreadable file, `--repo` not `owner/name`, a `--timeout` that is not a whole number of seconds, a PDF, or over GitHub's 10 MB limit |
-| 3 | no browser could be opened, the DevTools port is already in use, or the page did not finish loading within `--timeout` |
+| 2 | bad arguments, a missing or unreadable file, `--repo` not `owner/name`, a `--timeout` outside 1 to 3600 whole seconds, a PDF, or over GitHub's 10 MB limit |
+| 3 | the driver could not get started, so nothing was sent: no browser could be opened, the DevTools port is already in use, the page did not finish loading within `--timeout`, or `gh` or `gh-mint` could not be run |
 | 4 | that browser is not signed in to GitHub |
 | 5 | the repository could not be read — missing, invisible, or issues disabled; or, with a browser driver, the editor box already has text (a saved draft or a prefilled issue template), which is left untouched |
 | 6 | the editor ignored the paste |
-| 7 | no attachment URL came back, and the upload may still have landed: it timed out, or the token path could not reach GitHub or the broker, or it reported success with no URL in the answer. Retrying can leave a second asset behind |
+| 7 | no attachment URL came back **after the bytes went out**, so the upload may have landed: it timed out, the transport failed mid-request, or it reported success with no URL in the answer. Retrying can leave a second asset behind. A failure before anything was sent is 3, not this |
 | 8 | the upload was refused and nothing was uploaded — by GitHub (a rate limit, or a token this endpoint does not accept), or by the broker that holds the token |
 | 9 | no token upload is available here, or none for this file; `auto` reads this as its cue to start a browser, never as a failure |
 
