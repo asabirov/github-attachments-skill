@@ -39,6 +39,15 @@ check "bare repo name is refused"        2 "wants owner/name"    -- "$mint" "$tm
 check "unknown flag is refused"          2 "unknown flag"        -- "$mint" "$tmp/tiny.png" --repo a/b --nope
 check "unknown driver is refused"        2 "auto, orca or chrome" -- "$mint" "$tmp/tiny.png" --repo a/b --driver ie6
 
+# Images only, and refused before a browser starts: GitHub would accept a PDF upload
+# and hand back a files/ URL this skill no longer reads, so the caller would pay the
+# transfer and then time out. Both the name and the file's own first bytes are asked.
+printf 'x' > "$tmp/homework.pdf"; printf 'x' > "$tmp/HOMEWORK.PDF"
+printf '%%PDF-1.7\n1 0 obj\n' > "$tmp/homework"
+check "a PDF is refused early"           2 "uploads images only" -- "$mint" "$tmp/homework.pdf" --repo a/b
+check "an uppercase .PDF is refused"     2 "uploads images only" -- "$mint" "$tmp/HOMEWORK.PDF" --repo a/b
+check "a PDF without a suffix is caught" 2 "uploads images only" -- "$mint" "$tmp/homework" --repo a/b
+
 # 11 MB, over GitHub's 10 MB ceiling, and refused without a browser ever starting.
 mkfile_size=$((11 * 1024 * 1024))
 dd if=/dev/zero of="$tmp/huge.png" bs=1024 count=$((mkfile_size / 1024)) 2>/dev/null

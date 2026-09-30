@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Removed
+
+- **PDF uploads.** The helper now uploads images only. A PDF is refused before any browser starts, by its name or its own first bytes, with exit code 2 and a message naming the reason. GitHub's token upload refuses PDFs outright, and a document belongs in a document store you can link to (#19).
+  Action: If you were uploading PDFs, store them elsewhere and put the link in your issue or pull request.
+
 ### Fixed
 
 - **Concurrent Chrome runs.** The Chrome driver now takes an exclusive profile lock so simultaneous runs cannot share one browser, and takes over locks whose process is gone (#17).

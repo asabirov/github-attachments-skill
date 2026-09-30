@@ -1,4 +1,4 @@
-// Repository names, attachment IDs and document names are synthetic offline fixtures.
+// Repository names and attachment IDs are synthetic offline fixtures.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
@@ -55,7 +55,7 @@ log({expressionLength:expression.length});
 const context={localStorage,crypto:require('node:crypto').webcrypto,URL,location:new URL(origin),document,window:{HTMLTextAreaElement:Area},
  DataTransfer:Transfer,ClipboardEvent:Event,Event,File,Uint8Array,
  atob:s=>Buffer.from(s,'base64').toString('binary'),
- setTimeout:fn=>{document.readyState='complete';if(editor.text==='Uploading file')editor.text=scenario==='pdf'?'[lesson.pdf](https://github.com/user-attachments/files/0000000000/lesson.pdf)':'![shot](https://github.com/user-attachments/assets/${asset})';queueMicrotask(fn);}};
+ setTimeout:fn=>{document.readyState='complete';if(editor.text==='Uploading file')editor.text='![shot](https://github.com/user-attachments/assets/${asset})';queueMicrotask(fn);}};
 Promise.resolve(vm.runInNewContext(expression,context)).then(result=>reply({origin,result})).catch(e=>{console.error(e.message);process.exitCode=1;});
 `;
 
@@ -63,9 +63,8 @@ function run(scenario, size = 1024, format = 'url') {
   const dir = mkdtempSync(join(tmpdir(), 'orca-upload-test-'));
   try {
     writeFileSync(join(dir, 'orca'), fixture, { mode: 0o755 });
-    const filename=scenario==='pdf'?'lesson.pdf':'shot.png';
-    writeFileSync(join(dir, filename), Buffer.alloc(size));
-    const result = spawnSync('bash', [mint, join(dir, filename), '--format', format, '--repo', 'owner/repo', '--driver', 'orca', '--timeout', '5'], {
+    writeFileSync(join(dir, 'shot.png'), Buffer.alloc(size));
+    const result = spawnSync('bash', [mint, join(dir, 'shot.png'), '--format', format, '--repo', 'owner/repo', '--driver', 'orca', '--timeout', '5'], {
       env: { ...process.env, PATH: dir + ':' + process.env.PATH, CALLS: join(dir, 'calls'), CASE: scenario },
       encoding: 'utf8', timeout: 20_000,
     });
@@ -95,10 +94,10 @@ for (const [scenario, exit] of [['signed-out', 4], ['login-redirect',4], ['wrong
   });
 }
 
-test('multi-megabyte PDF crosses bounded calls and returns a document link', () => {
-  const result = run('pdf', 2 * 1024 * 1024, 'markdown');
+test('a multi-megabyte image crosses bounded calls and returns an inline image', () => {
+  const result = run('success', 2 * 1024 * 1024, 'markdown');
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout.trim(), '[lesson.pdf](https://github.com/user-attachments/files/0000000000/lesson.pdf)');
+  assert.equal(result.stdout.trim(), '![shot](https://github.com/user-attachments/assets/' + asset + ')');
   assert.equal(result.calls.filter(c=>c.action==='paste').length,1);
   assert.equal(result.calls.find(c=>c.action==='paste').bytes,2*1024*1024);
   assert.ok(result.calls.filter(c=>c.expressionLength).every(c=>c.expressionLength<128*1024));
@@ -106,10 +105,10 @@ test('multi-megabyte PDF crosses bounded calls and returns a document link', () 
   assert.ok(result.calls.some(c=>c.command?.[1]==='close'));
 });
 
-test('PDF HTML output is a link', () => {
- const result=run('pdf',1024,'html');
+test('HTML output is an inline image', () => {
+ const result=run('success',1024,'html');
  assert.equal(result.status,0,result.stderr);
- assert.equal(result.stdout.trim(), '<a href="https://github.com/user-attachments/files/0000000000/lesson.pdf">lesson.pdf</a>');
+ assert.equal(result.stdout.trim(), '<img alt="shot" src="https://github.com/user-attachments/assets/' + asset + '" />');
 });
 
 test('a large file waits for its new tab to leave about:blank before staging', () => {

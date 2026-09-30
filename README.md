@@ -1,6 +1,6 @@
 # github-attachments
 
-Upload images and PDFs to GitHub issues, pull requests, and comments from an AI coding agent or the terminal—without committing the files to the repository.
+Upload images to GitHub issues, pull requests, and comments from an AI coding agent or the terminal—without committing the files to the repository.
 
 ```text
 Workflow diagram
@@ -38,12 +38,6 @@ Example output (synthetic ID, not a live attachment):
 ![screenshot](https://github.com/user-attachments/assets/00000000-0000-4000-8000-000000000000)
 ```
 
-PDFs use the same command and produce a download link:
-
-```bash
-scripts/mint.sh document.pdf --repo example-owner/example-repo --format markdown
-```
-
 By default, the command prints a URL. Use the following options when you need a different format or upload behavior:
 
 - `--format markdown` or `--format html` returns an embeddable link.
@@ -53,7 +47,7 @@ By default, the command prints a URL. Use the following options when you need a 
 
 ## Why it exists
 
-Screenshots and documents are often useful in a review discussion but do not belong in the repository's Git history. This helper accepts a local file and returns a GitHub attachment URL, allowing an agent or developer to add visual evidence without sending the file bytes through the conversation.
+Screenshots are often useful in a review discussion but do not belong in the repository's Git history. This helper accepts a local image and returns a GitHub attachment URL, allowing an agent or developer to add visual evidence without sending the file bytes through the conversation.
 
 The helper uses GitHub's own paste handler in a signed-in browser. The resulting link can be used in an issue, pull request, or comment; the caller decides where to place it.
 
@@ -61,6 +55,7 @@ The helper uses GitHub's own paste handler in a signed-in browser. The resulting
 
 - You need a signed-in browser with access to the target repository. This is not a token-only CI uploader, and the repository must have its issue editor enabled.
 - Upload the file to the repository where you will use the link. Private image references may require GitHub's rendered page to display correctly, so a direct fetch is not a reliable verification method.
+- Images only. A PDF is refused before any browser starts, by its name or its first bytes; keep documents in a document store and link to them.
 - Files are limited to 10 MB. Orca stages large files in browser origin storage, so browser quota can limit uploads. Chrome transfers files through the DevTools Protocol.
 - Chrome stores its signed-in profile outside the checkout at `~/.claude/state/github-attachments/chrome-profile`. Keep this profile private.
 
