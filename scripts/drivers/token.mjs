@@ -19,7 +19,13 @@ import { basename, extname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const [image, repo, timeout] = process.argv.slice(2);
-const timeoutMs = Number(timeout) * 1000;
+// `--timeout` is the caller's deadline for the whole driver, not for each step. The
+// local path makes three calls, so giving each one the full budget would let a slow
+// machine take three times what the caller asked for. 1ms rather than 0 for an
+// exhausted budget, because 0 means "no timeout" to spawnSync and throws in
+// AbortSignal.timeout; a 1ms deadline fails at once, which is what is wanted.
+const deadline = Date.now() + Number(timeout) * 1000;
+const left = () => Math.max(1, deadline - Date.now());
 
 const UPLOAD = 'https://uploads.github.com/user-attachments/assets';
 
@@ -50,12 +56,16 @@ function succeed(url) {
   process.exit(0);
 }
 
-// Run gh and return its trimmed stdout, or null. The token is one of these
-// answers, so no caller may put a result in a message or a log.
+// Run gh and hand back the whole result, because the caller has to tell a gh that
+// could not run from a gh that ran and said no. One of these answers is the token,
+// so a caller may put `stdout` in a header and nowhere else -- not in a message,
+// not in a log.
 function gh(args) {
-  const result = spawnSync('gh', args, { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024 });
-  if (result.error || result.status !== 0) return null;
-  return result.stdout.trim() || null;
+  return spawnSync('gh', args, { encoding: 'utf8', timeout: left(), maxBuffer: 256 * 1024 });
+}
+
+function oneline(text, limit = 300) {
+  return (text || '').replace(/\s+/g, ' ').trim().slice(0, limit);
 }
 
 // The type gate comes before the path choice, so an image kind neither path can
@@ -71,7 +81,7 @@ if (!type) {
 // so reading a token first would cost a pointless round trip on every run.
 if (process.env.ORCA_GH_BROKER_PORT) {
   const minted = spawnSync('gh-mint', [image, '--repo', repo], {
-    encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024,
+    encoding: 'utf8', timeout: left(), maxBuffer: 256 * 1024,
   });
   if (minted.error?.code !== 'ENOENT') {
     if (minted.stderr) writeSync(2, minted.stderr);
@@ -82,7 +92,10 @@ if (process.env.ORCA_GH_BROKER_PORT) {
     }
     const url = (minted.stdout || '').trim();
     if (minted.status === 0 && ASSET.test(url)) succeed(url);
-    if (minted.status === 0) fail(8, 'gh-mint returned no attachment URL');
+    // Exit 0 without a URL is the worst answer of the lot: the asset may well exist
+    // and only its URL was lost, so this is 7 rather than 8, and 7 warns that a
+    // retry can leave a second asset behind.
+    if (minted.status === 0) fail(7, `gh-mint reported success without an attachment URL: ${oneline(url, 120)}`);
     // gh-mint's own refusals (64) name the file and what to do about it, and
     // burying that behind a later browser failure -- on a host that has no
     // browser -- helps nobody, so this stops rather than falling back.
@@ -94,16 +107,30 @@ if (process.env.ORCA_GH_BROKER_PORT) {
   }
 }
 
-const token = gh(['auth', 'token']);
+// The token is read before anything else: without one there is nothing to do here,
+// and that is exit 9 -- a browser's job -- rather than a failure of this path. gh's
+// stderr is deliberately not quoted here, being the one answer that carries a
+// credential.
+const auth = gh(['auth', 'token']);
+const token = auth.status === 0 ? auth.stdout.trim() : '';
 if (!token) {
   fail(9, 'no gh login here and no broker mint verb, so there is no token to upload with');
 }
 
 // The asset is bound to this id at upload time, which is why --repo is required:
 // mint against one repository and embed in another and the image 404s for the reader.
-const id = gh(['api', `repos/${repo}`, '--jq', '.id']);
-if (!id || !/^[0-9]+$/.test(id)) {
-  fail(5, `cannot read the numeric id of ${repo}; check the name and that this login can see it`);
+// A gh that could not run at all is not the same as a repository this login cannot
+// see, and reporting the second for the first sends the reader to check a name that
+// was never the problem.
+const lookup = gh(['api', `repos/${repo}`, '--jq', '.id']);
+if (lookup.error) {
+  fail(7, lookup.error.code === 'ETIMEDOUT'
+    ? `gh did not answer within ${timeout}s when asked for the id of ${repo}`
+    : `gh could not be run to read the id of ${repo}: ${lookup.error.code}`);
+}
+const id = lookup.stdout.trim();
+if (!/^[0-9]+$/.test(id)) {
+  fail(5, `cannot read the numeric id of ${repo}: ${oneline(lookup.stderr) || `gh answered ${oneline(id, 60) || 'nothing'}`}`);
 }
 
 let bytes;
@@ -120,7 +147,7 @@ try {
     // Never follow a redirect with the token attached: fetch would re-send the
     // Authorization header to wherever the redirect points.
     redirect: 'manual',
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(left()),
   });
 } catch (error) {
   fail(7, error.name === 'TimeoutError'
@@ -129,7 +156,7 @@ try {
 }
 
 const said = await answer.text().catch(() => '');
-const brief = said.replace(/\s+/g, ' ').trim().slice(0, 300);
+const brief = oneline(said);
 if (!answer.ok) {
   // A 404 here reads as a missing endpoint and is usually a token this upload
   // does not accept: cli/cli#14309 reports a GitHub App installation token
@@ -141,5 +168,8 @@ let parsed;
 try { parsed = JSON.parse(said); } catch { parsed = null; }
 const url = Object.values(parsed && typeof parsed === 'object' ? parsed : {})
   .find(value => typeof value === 'string' && ASSET.test(value));
-if (!url) fail(8, `the upload answered without an attachment URL: ${brief}`);
+// GitHub took the bytes and this driver could not find the URL in the answer, so
+// the asset probably exists. 7, not 8, for the same reason as gh-mint's silent
+// success above: a caller who retries on 8 would mint a second copy unwarned.
+if (!url) fail(7, `the upload answered HTTP ${answer.status} without an attachment URL: ${brief}`);
 succeed(url);

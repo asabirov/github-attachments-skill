@@ -7,6 +7,8 @@
 - **Token uploads, with no browser at all.** Where a `gh` login is readable, the helper now uploads the image with it in one request, and `--driver auto` tries that before any browser. On an Orca remote host, which holds no GitHub credential, it calls the GitHub broker's `gh-mint` instead, so the machine that does hold the token performs the upload and sends back only the URL. A remote host therefore no longer needs a browser or a signed-in session, which is what made this unusable there (#3).
   Action: Nothing to set up where `gh` is already signed in. The browser drivers stay as the fallback, so keep using `login.sh` for Chrome.
 
+- **Exit code 7 now warns you not to retry blindly.** It means no attachment URL came back and the upload may still have landed, so a retry can leave a second asset behind. Exit code 8 keeps the opposite meaning: refused, and nothing was uploaded (#3).
+
 - **Exit code 9.** The token driver reports 9 when no token upload is available here, or none for this file — an SVG, for instance, which only a browser can paste. `--driver auto` reads it as its cue to fall back to a browser rather than as a failure; `--driver token` shows you the reason (#3).
 
 ### Removed
