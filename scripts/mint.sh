@@ -79,26 +79,18 @@ if [ "$bytes" -gt 10485760 ]; then
 	exit 2
 fi
 
-# A token upload comes first: one request, no browser, and the only path open on a
-# host with no display. Exit 9 from it means no token path here, which calls for a
-# browser rather than an error.
+# The token driver needs no browser and is the only path on a headless host. Exit 9
+# means it has no way to upload here, which is not an error, so its reason is kept
+# back and a browser takes over.
 minted=false
 if [ "$driver" = auto ]; then
 	why="$(mktemp)"; trap 'rm -f "$why"' EXIT
 	status=0
 	attachment="$(node "$here/scripts/drivers/token.mjs" "$image" "$repo" "$timeout_s" 2>"$why")" || status=$?
-	# Exit 9 is not news in `auto`, so its reason is held back. Anything else the
-	# driver said belongs on stderr, uploaded or not.
 	[ "$status" = 9 ] || cat "$why" >&2
 	case "$status" in
 		0) minted=true ;;
-		# Orca's browser is already signed in; Chrome is the answer when Orca is
-		# closed, and the one that needs `login.sh` first.
-		9) if [ -n "${ORCA_WORKTREE_ID:-}" ] && command -v orca >/dev/null 2>&1; then
-				driver=orca
-			else
-				driver=chrome
-			fi ;;
+		9) if [ -n "${ORCA_WORKTREE_ID:-}" ] && command -v orca >/dev/null 2>&1; then driver=orca; else driver=chrome; fi ;;
 		*) exit "$status" ;;
 	esac
 fi

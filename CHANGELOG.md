@@ -4,12 +4,9 @@
 
 ### Added
 
-- **Token uploads, with no browser at all.** If a `gh` login is available, the helper uploads the image in one request, and `--driver auto` tries this before any browser. On an Orca remote host, which has no GitHub credential, it calls the GitHub broker's `gh-mint`. The machine holding the token uploads the image and returns only the URL. The helper chooses between these methods by asking `gh` for a token. A remote host therefore no longer needs a browser or a signed-in session, which is what made this unusable there (#3).
-  Action: Nothing needs setting up where `gh` is already signed in. Browser drivers remain available as fallbacks, so use `login.sh` for Chrome.
+- **Uploads without a browser.** Where a `gh` login or the GitHub broker's `gh-mint` is available, the helper uploads the image with it in one request, and `--driver auto` tries that before any browser. A remote host with neither a browser nor a signed-in session can now mint; the browser drivers stay as the fallback (#3).
 
-- **Exit code 7 now warns you not to retry blindly.** The bytes were sent, but no attachment URL came back. The upload may have succeeded, so retrying can create a second asset. Exit code 8 still means the upload was refused and nothing was uploaded. If `gh` or `gh-mint` cannot run before anything is sent, the exit code is 3; this also covers a browser that could not be opened (#3).
-
-- **Exit code 9.** The token driver reports 9 when no token upload is available here, or none for this file — an SVG, for instance, which only a browser can paste. `--driver auto` reads it as its cue to fall back to a browser rather than as a failure; `--driver token` shows you the reason (#3).
+- **Exit codes 7 and 9.** 7 means the bytes went out and no URL came back, so a retry can leave a second asset behind; 8 now covers every failure where nothing was uploaded and a retry is safe. 9 means there is no token upload here, and tells `--driver auto` to use a browser (#3).
 
 ### Removed
 
@@ -18,11 +15,7 @@
 
 ### Fixed
 
-- **Bad input reported as bad input.** A `--timeout` outside 1 to 3600 whole seconds, or an existing file that cannot be read, now returns exit code 2. Previously, both passed the argument checks and produced a raw interpreter error with exit code 1. The upper limit is important: a number too large for a double became `Infinity` in Node and failed like a word did (#3).
-
-- **A note on checking a URL you just minted.** An attachment that nothing references yet answers 404 even in a public repository, and 302 as soon as it is embedded, so a `curl` straight after minting looks like a failure and is not one (#3).
-
-- **The documented way to check a public attachment URL.** The skill said the plain URL answers `200 image/png`. It answers **302** to a signed S3 URL that expires in 300 seconds, and a `HEAD` gets **403** at that step, so `curl -I` on a perfectly good attachment looked broken (#3).
+- **Bad input and attachment checks.** A `--timeout` outside 1 to 3600 seconds and an unreadable file now exit 2 instead of a raw interpreter error, and the documented way to check a public attachment URL is corrected: it answers **302** to a signed S3 URL, and `HEAD` gets **403** at that step (#3).
 
 - **Concurrent Chrome runs.** The Chrome driver now takes an exclusive profile lock so simultaneous runs cannot share one browser, and takes over locks whose process is gone (#17).
 

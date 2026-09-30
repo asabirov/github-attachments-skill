@@ -21,25 +21,21 @@ Repository names and attachment IDs in these examples are synthetic placeholders
 
 ## Decision
 
-**Upload with a reachable token, and use a signed-in browser's paste handler as fallback.** Either way, return the URL to the caller for embedding.
+**Upload with a token where there is one, and fall back to a signed-in browser's paste handler.** Either way the URL goes back to the caller to embed.
 
-*Commit the file into the repository* — store it in `.github/pr-screenshots/` and link to the blob. Rejected because the image would remain in git history forever, although it describes only one afternoon. People outside a private repository would also see nothing.
+*Commit the file into the repository* — save it in `.github/pr-screenshots/` and link to the blob. Rejected because the image would remain in git history forever, even though it describes something true for only one afternoon. Readers outside a private repository would also see nothing.
 
-*Drive a browser and nothing else.* This was the design until 2026-09-30; `lib/paste.js` explains why. On 2026-09-03, `POST github.com/upload/policies/assets` with a personal access token returned **422** and GitHub's generic error page instead of an upload policy. The conclusion was that tokens could not upload, so unattended uploads were impossible. GitHub released a token-authenticated upload at another address on 2026-09-01, so that conclusion no longer applies. Measured on 2026-09-30 (#3), `POST https://uploads.github.com/user-attachments/assets` returns **201** for a PNG with either `Authorization: token` or `Bearer`, and **422** for a PDF.
-
-The browser remains the fallback because token uploads accept only images and work only where a token is reachable.
+*Drive a browser and nothing else.* That was the design until GitHub's token upload arrived; `lib/paste.js` holds the 422 that made a browser the only key at the time. The token upload takes images only, so a browser is still the fallback.
 
 ## Three things that can mislead you
 
-**The URL is a reference, not the file itself.** `github.com/user-attachments/assets/<uuid>` returns **404** for an asset in a private repository, regardless of who requests it. This includes signed-in repository owners. When GitHub renders the URL, it rewrites it to a `private-user-images.githubusercontent.com` URL containing a JWT that expires in about five minutes.
+**The URL is a reference, not the file itself.** `github.com/user-attachments/assets/<uuid>` returns **404** for an asset in a private repository, regardless of who requests it, and for any asset nothing references yet — so a `curl` straight after minting looks like a failure and is not one. Mint, embed, then check. When GitHub renders the URL, it rewrites it to a `private-user-images.githubusercontent.com` URL containing a JWT that expires in about five minutes.
 
-For a **public** repository the plain URL does fetch the file, but through a redirect: **302** to a `github-production-user-asset-*.s3.amazonaws.com` URL whose signature expires in 300 seconds. A `GET` follows it; a `HEAD` gets **403** at the S3 step, so `curl -I` on a perfectly good attachment looks broken. A direct `curl` proves nothing for a private repository either way. The reliable check is to read the rendered body:
+Once it is referenced in a **public** repository the plain URL fetches the file through a **302** to a signed S3 URL, and a `HEAD` gets **403** at that step, so `curl -I` on a good attachment looks broken. The reliable check is to read the rendered body:
 
 ```bash
 gh api repos/OWNER/REPO/pulls/N -H 'Accept: application/vnd.github.html+json' --jq .body_html
 ```
-
-**A freshly minted URL returns 404 until something references it.** On 2026-09-30, an asset minted into a *public* repository returned **404** while unreferenced. The same URL returned **302** to its signed S3 location as soon as it appeared in a pull request body. So `curl` immediately after minting can look like a failed upload when it is not. Mint, embed, then check.
 
 **The asset belongs to a repository, not to you.** GitHub records the `repository_id` at upload time — from the paste page, or from the token upload's query — so `--repo` is required and must be correct. If you mint the asset against repository A and embed it in repository B, it renders for you but returns 404 for your reader.
 
@@ -51,17 +47,11 @@ gh api repos/OWNER/REPO/pulls/N -H 'Accept: application/vnd.github.html+json' --
 
 | Driver | When | Setup |
 | --- | --- | --- |
-| `token` | a `gh` login is readable here, or the broker's `gh-mint` is | none |
+| `token` | a `gh` login, or the broker's `gh-mint`, is on this machine | none |
 | `orca` | no token, `ORCA_WORKTREE_ID` is set and `orca` is on PATH | Node.js and `file` on PATH; uses the Orca browser session, exits 4 if signed out |
 | `chrome` | no token, and Orca is not there | `scripts/login.sh`, once |
 
-The token driver opens no browser, so it is the only driver that works without a display. It makes one request; the other drivers launch a browser and run a poll loop. It accepts PNG, JPEG, GIF and WebP, based on the file name. The name and content type are sent together in the upload query, so detecting a type that disagrees with the name could publish a `.png` link to JPEG bytes. Any other image, such as an SVG, falls through to a browser under `auto`, because a browser's paste handler does accept it. This type check runs before either token path.
-
-If `gh` can read a login, the driver uploads the bytes itself. It first gets the credential with `gh auth token`; without one, there is nothing to do locally. It then gets the numeric repository ID with `gh api repos/OWNER/REPO --jq .id` and sends a `POST` request to `https://uploads.github.com/user-attachments/assets`. The token is never printed, logged or passed as an argument. Redirects are not followed while the token is attached, because that could send it to the redirect target. The driver also never quotes `gh`'s stderr: `GH_DEBUG=api` makes `gh` print request headers. For a failed repository lookup, it reports only the HTTP status, which distinguishes a wrong repository name from a login that cannot access the repository. It finds the returned URL by matching its shape rather than reading a named field, because that field name is undocumented.
-
-A remote host has no GitHub credential, so the same driver calls `gh-mint <file> --repo OWNER/REPO`. The broker on the machine with the token uploads the bytes and returns only the URL ([orca-remote-hosts-skill#122](https://github.com/asabirov/orca-remote-hosts-skill/issues/122)). The driver chooses between these paths by asking `gh` for a token and nothing else: a machine that returns one uploads locally; a machine that does not calls `gh-mint`. `ORCA_GH_BROKER_PORT` is not the signal. `bin/setup` writes that port *inside* the installed `gh-mint`, which exports it on its second line, so no shell on the host has it set. Checking `gh` first also prevents a machine with a token from using a checkout's `gh-mint` instead of the one installed by `bin/setup`; the checkout version would have no port. This check costs one refused shim call, measured at about a quarter of a second.
-
-`--timeout` limits the whole driver, not each step. The local path makes three calls, and they share one deadline. By default, this timeout is shorter than `gh-mint`'s own deadlines.
+The token driver opens no browser, so it is the only one that works on a machine with no display. Where `gh` has a login it uploads the file itself; where it has none it runs `gh-mint <file> --repo OWNER/REPO`, and the broker on the machine that holds the token uploads for it. A host needs one of those two and nothing else. It takes PNG, JPEG, GIF and WebP by file name, and anything else it leaves to a browser. `--timeout` bounds the whole driver.
 
 Chrome runs headless without additional dependencies. It uses `GH_ATTACH_CHROME` when set, then looks for `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser` on PATH (and the standard macOS app path). If none is executable, it exits 3 with an actionable message. It uses Node's global `WebSocket` (since v21) to speak the DevTools Protocol. It avoids coupling to another skill's `node_modules` by not importing puppeteer from `browser-tools`. It uses `~/.claude/state/github-attachments/chrome-profile`, not `~/.cache/browser-tools`: every Claude session on this machine shares that cache, so a live GitHub session there would let any session act as you.
 
@@ -73,7 +63,7 @@ It stages large files in bounded calls within its own tab before pasting, under 
 
 ### The one manual step
 
-Only the browser drivers need this; the token driver needs no sign-in at all. A browser upload requires a GitHub session, which no script can create: it needs a password and a second factor. `scripts/login.sh` opens a visible Chrome window using this skill's own profile, waits for sign-in to complete, and prints the login it detected. After that, every run is headless and unattended until the session expires. Inside Orca, you never need this step.
+Only the browser drivers need this. A browser upload requires a GitHub session, which no script can create: it needs a password and a second factor. `scripts/login.sh` opens a visible Chrome window using this skill's own profile, waits for sign-in to complete, and prints the login it detected. After that, every run is headless and unattended until the session expires. Inside Orca, you never need this step.
 
 ## What it refuses, and why it refuses early
 
@@ -84,13 +74,13 @@ A PDF is refused the same way, by its name and then by its own first bytes, so a
 | Exit | Means |
 | --- | --- |
 | 2 | bad arguments, a missing or unreadable file, `--repo` not `owner/name`, a `--timeout` outside 1 to 3600 whole seconds, a PDF, or over GitHub's 10 MB limit |
-| 3 | the driver could not get started, so nothing was sent: no browser could be opened, the DevTools port is already in use, the page did not finish loading within `--timeout`, or `gh` or `gh-mint` could not be run |
+| 3 | no browser could be opened, the DevTools port is already in use, or the page did not finish loading within `--timeout` |
 | 4 | that browser is not signed in to GitHub |
-| 5 | the repository could not be read — missing, invisible, or issues disabled; or, with a browser driver, the editor box already has text (a saved draft or a prefilled issue template), which is left untouched |
+| 5 | no usable comment editor — repo missing, invisible, or issues disabled; or the box already has text (a saved draft or a prefilled issue template), which is left untouched |
 | 6 | the editor ignored the paste |
-| 7 | no attachment URL came back **after the bytes went out**, so the upload may have landed: it timed out, the transport failed mid-request, it reported success with no URL in the answer, or `gh-mint` was stopped, signalled, or exited in a way this skill does not recognise. Retrying can leave a second asset behind. A failure before anything was sent is 3, not this |
-| 8 | the upload was refused and nothing was uploaded — by GitHub (a rate limit, or a token this endpoint does not accept), or by the broker that holds the token |
-| 9 | no token upload is available here, or none for this file; `auto` reads this as its cue to start a browser, never as a failure |
+| 7 | no URL came back after the bytes went out, so the upload may have landed: retrying can leave a second asset behind |
+| 8 | the upload failed and nothing was uploaded, so a retry is safe: GitHub or the broker refused it, or `gh` could not read the repository |
+| 9 | no token upload here, or not for this file; `auto` reads this as its cue to start a browser |
 
 Signed-out status has its own exit code because it looks exactly like a failed upload but has a one-command fix.
 
