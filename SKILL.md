@@ -79,7 +79,7 @@ A PDF is refused the same way, by its name and then by its own first bytes, so a
 
 | Exit | Means |
 | --- | --- |
-| 2 | bad arguments, missing file, `--repo` not `owner/name`, a PDF, or over GitHub's 10 MB limit |
+| 2 | bad arguments, a missing or unreadable file, `--repo` not `owner/name`, a `--timeout` that is not a whole number of seconds, a PDF, or over GitHub's 10 MB limit |
 | 3 | no browser could be opened, the DevTools port is already in use, or the page did not finish loading within `--timeout` |
 | 4 | that browser is not signed in to GitHub |
 | 5 | the repository could not be read — missing, invisible, or issues disabled; or, with a browser driver, the editor box already has text (a saved draft or a prefilled issue template), which is left untouched |

@@ -16,6 +16,8 @@
 
 ### Fixed
 
+- **Bad input reported as bad input.** A `--timeout` that is not a whole number of seconds, and a file that exists but cannot be read, are now named with exit code 2. Both previously reached past the argument checks and came back as a raw interpreter error with exit code 1 (#3).
+
 - **The documented way to check a public attachment URL.** The skill said the plain URL answers `200 image/png`. It answers **302** to a signed S3 URL that expires in 300 seconds, and a `HEAD` gets **403** at that step, so `curl -I` on a perfectly good attachment looked broken (#3).
 
 - **Concurrent Chrome runs.** The Chrome driver now takes an exclusive profile lock so simultaneous runs cannot share one browser, and takes over locks whose process is gone (#17).

@@ -88,7 +88,9 @@ if (process.env.ORCA_GH_BROKER_PORT) {
     // browser -- helps nobody, so this stops rather than falling back.
     if (minted.status === 64) fail(2, 'gh-mint refused the file; see its message above');
     if (minted.status === 77) fail(8, 'the broker holding the token refused this upload');
-    fail(7, `gh-mint exited ${minted.status} without an attachment URL`);
+    fail(7, minted.signal
+      ? `gh-mint was killed by ${minted.signal} without an attachment URL`
+      : `gh-mint exited ${minted.status} without an attachment URL`);
   }
 }
 
@@ -104,12 +106,16 @@ if (!id || !/^[0-9]+$/.test(id)) {
   fail(5, `cannot read the numeric id of ${repo}; check the name and that this login can see it`);
 }
 
+let bytes;
+try { bytes = readFileSync(image); }
+catch (error) { fail(2, `cannot read ${image}: ${error.code || error.message}`); }
+
 const query = new URLSearchParams({ name: basename(image), content_type: type, repository_id: id });
 let answer;
 try {
   answer = await fetch(`${UPLOAD}?${query}`, {
     method: 'POST',
-    body: readFileSync(image),
+    body: bytes,
     headers: { Authorization: `token ${token}`, 'Content-Type': type, Accept: 'application/vnd.github+json' },
     // Never follow a redirect with the token attached: fetch would re-send the
     // Authorization header to wherever the redirect points.

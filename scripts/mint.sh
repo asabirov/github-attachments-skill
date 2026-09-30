@@ -36,10 +36,20 @@ done
 [ -n "$image" ] || { usage >&2; exit 2; }
 [ -n "$repo" ]  || { echo "mint: --repo <owner/name> is required, and decides who can see the image" >&2; exit 2; }
 [ -f "$image" ] || { echo "mint: no such file: $image" >&2; exit 2; }
+# Named too, because the first thing to touch the bytes is the PDF check below, and
+# an unreadable file there leaves a raw `Permission denied` from bash and exit 1.
+[ -r "$image" ] || { echo "mint: cannot read $image; check its permissions" >&2; exit 2; }
 
 case "$repo" in
 	*/*) ;;
 	*) echo "mint: --repo wants owner/name, got '$repo'" >&2; exit 2 ;;
+esac
+
+# Named here rather than left to a driver, because a driver hands a non-numeric
+# timeout straight to Node, which answers with a stack trace and an exit code this
+# skill does not document.
+case "$timeout_s" in
+	''|*[!0-9]*|0) echo "mint: --timeout wants a whole number of seconds, got '$timeout_s'" >&2; exit 2 ;;
 esac
 
 # GitHub's token upload refuses PDFs outright, and documents belong in a document
