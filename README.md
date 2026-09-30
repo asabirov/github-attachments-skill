@@ -42,7 +42,7 @@ By default, the command prints a URL. Use these options when needed:
 
 Screenshots can help explain a review but do not belong in the repository's Git history. This helper uploads a local image and returns a GitHub attachment URL, so an agent or developer can add visual evidence without sending the file through the conversation.
 
-Version 0.1.0 drove a signed-in browser and pasted the file into GitHub's own editor, because that was then the only way to mint an attachment. GitHub's token upload does it in one request, so the browser drivers are gone.
+Version 0.1.0 drove a signed-in browser and pasted the file into GitHub's own editor, because that was then the only route this skill had; the 422 that proved it is in #3 and in this repository's git history. GitHub's token upload does it in one request, so the browser drivers are gone.
 
 ## Limits and authentication
 

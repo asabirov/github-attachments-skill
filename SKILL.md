@@ -54,7 +54,7 @@ Bash, Node.js 21 or later, and one of these token routes:
 
 The script checks for a `gh` token and otherwise uses `gh-mint`. A host needs one route and nothing else.
 
-It accepts PNG, JPEG, GIF and WebP. The type is chosen from the file name and checked against the first bytes before upload, so a misleading symlink cannot publish another type. `--timeout` limits the run, except that `gh-mint` always receives 150s because the broker can take 120.
+It accepts PNG, JPEG, GIF and WebP. The type is chosen from the file name and checked against the first bytes before upload, so a misleading symlink cannot publish another type. `--timeout` limits the run, except that `gh-mint` receives at least 150s, and `--timeout` when that is longer, because the broker behind it can take 120.
 
 `--driver` has one value, `token`, which is also what `auto` selects. `--driver chrome` and `--driver orca` exit 2 because browser drivers were removed.
 
@@ -62,7 +62,7 @@ It accepts PNG, JPEG, GIF and WebP. The type is chosen from the file name and ch
 
 These checks happen before upload. An oversized image used to upload for a minute and then time out. Because GitHub checks size after transfer, this skill rejects it first.
 
-A PDF is refused by its name and then by its first bytes, so a PDF without a suffix is also caught. This skill uploads images; GitHub's token upload refuses PDFs, and a document belongs in a document store that you can link to. Allowing one through would still consume the transfer and then return a `user-attachments/files/` URL this skill cannot use. Nothing else about a file's type is checked.
+A PDF is refused by its name and then by its first bytes, so a PDF without a suffix is also caught. This skill uploads images; GitHub's token upload refuses PDFs, and a document belongs in a document store that you can link to. Allowing one through would still consume the transfer and then return a `user-attachments/files/` URL this skill cannot use.
 
 | Exit | Means |
 | --- | --- |

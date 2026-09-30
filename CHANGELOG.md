@@ -10,8 +10,8 @@
 
 ### Removed
 
-- **The browser upload drivers.** Every upload now goes through a `gh` login or `gh-mint`, so `--driver chrome` and `--driver orca` are gone, along with the Chrome profile and its lock, port 9375, the paste library, the one-time `scripts/login.sh` sign-in, exit codes 3 to 6, and the fixes those drivers had collected (#5, #9, #15, #17). Nothing needs a browser, a display or a signed-in session any more (#22).
-  Action: On a machine with neither a `gh` login nor `gh-mint`, install one of them. If you pinned `--driver chrome` or `--driver orca`, drop the flag; both now exit 2 with a message naming the removal.
+- **The browser upload drivers.** Every upload now goes through a `gh` login or `gh-mint`, so `--driver chrome` and `--driver orca` are gone, along with the Chrome profile and its lock, port 9375, the paste library, the one-time `scripts/login.sh` sign-in, exit codes 3 to 6, and the unreleased fixes made to them (#5, #9, #15, #17). Nothing needs a browser, a display or a signed-in session any more (#22).
+  Action: On a machine with neither a `gh` login nor `gh-mint`, install one of them. If you pinned `--driver chrome` or `--driver orca`, drop the flag; both now exit 2 with a message naming the removal. If you signed in with 0.1.0, delete `~/.claude/state/github-attachments/chrome-profile`: it holds a live GitHub session that nothing uses, refreshes or clears now.
 
 - **SVG and video uploads.** A browser could paste anything GitHub's editor accepted. The token upload takes PNG, JPEG, GIF and WebP, and nothing this skill is for needs the other two (#22).
   Action: Render a diagram to PNG instead of SVG before minting it.
