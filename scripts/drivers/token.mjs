@@ -1,6 +1,6 @@
-// Upload with a GitHub token instead of a browser. A machine with a gh login
-// uploads the bytes itself; one without runs gh-mint, which hands them to the
-// broker on the machine that holds the token. Exit codes are in SKILL.md.
+// Upload with a GitHub token. A machine with a gh login uploads the bytes
+// itself; one without runs gh-mint, which hands them to the broker on the
+// machine that holds the token. Exit codes are in SKILL.md.
 
 import { readFileSync, writeSync } from 'node:fs';
 import { basename, extname } from 'node:path';

@@ -1,37 +1,29 @@
 # github-attachments
 
-Upload images to GitHub issues, pull requests, and comments from an AI coding agent or the terminal—without committing the files to the repository.
+Upload images to GitHub issues, pull requests, and comments from an AI coding agent or the terminal—without committing them to the repository.
 
 ```text
 Workflow diagram
-Local file → a GitHub token, or a signed-in browser → GitHub attachment URL → issue, PR, or comment
+Local file → GitHub token → GitHub attachment URL → issue, PR, or comment
 ```
 
 ## Quick start
 
-You need Bash, Node.js 21 or later, and one way to reach GitHub:
+You need Bash, Node.js 21 or later, and either:
 
-- A `gh` login, or the GitHub broker's `gh-mint` command. Needs no browser and no display, so this is the only option on a headless host.
-- Orca with a signed-in GitHub browser session.
-- Google Chrome on macOS or Linux.
+- A `gh` login on this machine.
+- The GitHub broker's `gh-mint` command, which sends the file to another machine that holds the GitHub token.
 
-The Orca driver also requires the `file` utility on PATH for MIME detection.
-The tool has no npm dependencies. On macOS, the Chrome driver tries the standard application path. On Linux, set `GH_ATTACH_CHROME` to the Chrome executable or let the driver find `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser` on PATH.
+The tool has no npm dependencies and works on a headless host.
 
-Clone `asabirov/github-attachments-skill` and run the commands from the repository root. To use it from an agent, expose the checkout as the `github-attachments` skill. The agent instructions are in [SKILL.md](SKILL.md).
-The skill version lives in `metadata.version` in [SKILL.md](SKILL.md).
+Clone `asabirov/github-attachments-skill` and run commands from the repository root. To use it from an agent, expose the checkout as the `github-attachments` skill. The agent instructions are in [SKILL.md](SKILL.md). The skill version is in `metadata.version` in [SKILL.md](SKILL.md).
 
 ```bash
-# Outside Orca: opens Chrome for a one-time GitHub sign-in.
-scripts/login.sh
-
 # Uploads a local file to GitHub. Replace the path and repository first.
 scripts/mint.sh screenshot.png --repo example-owner/example-repo --format markdown
 ```
 
-Skip `login.sh` where a `gh` login or `gh-mint` is available, and inside Orca, which already has a signed-in browser session.
-
-The command uploads the file and prints Markdown that you can paste into an issue, pull request, or comment in the same repository. It does not submit the issue or comment.
+The command uploads the file and prints Markdown for an issue, pull request, or comment in the same repository. It does not submit the issue or comment.
 
 Example output (synthetic ID, not a live attachment):
 
@@ -39,44 +31,40 @@ Example output (synthetic ID, not a live attachment):
 ![screenshot](https://github.com/user-attachments/assets/00000000-0000-4000-8000-000000000000)
 ```
 
-By default, the command prints a URL. Use the following options when you need a different format or upload behavior:
+By default, the command prints a URL. Use these options when needed:
 
 - `--format markdown` or `--format html` returns an embeddable link.
 - `--alt` sets the alternative text for the link.
-- `--driver token|orca|chrome` pins one driver instead of letting `auto` choose.
+- `--driver token` selects the token upload.
 - `--timeout` sets the upload wait time in seconds. The default is `60`.
 
 ## Why it exists
 
-Screenshots are often useful in a review discussion but do not belong in the repository's Git history. This helper accepts a local image and returns a GitHub attachment URL, allowing an agent or developer to add visual evidence without sending the file bytes through the conversation.
+Screenshots can help explain a review but do not belong in the repository's Git history. This helper uploads a local image and returns a GitHub attachment URL, so an agent or developer can add visual evidence without sending the file through the conversation.
 
-When a token is available, the helper uploads the file in one request; otherwise it uses GitHub's own paste handler in a signed-in browser. The resulting link can be used in an issue, pull request, or comment; the caller decides where to place it.
+Version 0.1.0 drove a signed-in browser and pasted the file into GitHub's own editor, because that was then the only way to mint an attachment. GitHub's token upload does it in one request, so the browser drivers are gone.
 
 ## Limits and authentication
 
-- You need write access to the target repository, through a `gh` login, `gh-mint`, or a signed-in browser. A browser upload also needs the repository's issue editor enabled.
-- Token uploads take PNG, JPEG, GIF and WebP by file name; anything else needs a browser.
-- Upload the file to the repository where you will use the link. Private image references may require GitHub's rendered page to display correctly, so a direct fetch is not a reliable verification method.
-- Images only. A PDF is refused before any browser starts, by its name or its first bytes; keep documents in a document store and link to them.
-- Files are limited to 10 MB. Orca stages large files in browser origin storage, so browser quota can limit uploads. Chrome transfers files through the DevTools Protocol.
-- Chrome stores its signed-in profile outside the checkout at `~/.claude/state/github-attachments/chrome-profile`. Keep this profile private.
+- You need write access to the target repository through `gh` or `gh-mint`.
+- PNG, JPEG, GIF and WebP files are accepted by file name and by their first bytes. SVG files and videos are refused; render a diagram to PNG.
+- Upload the file to the repository where you will use the link. Private image references may require GitHub's rendered page to display correctly, so a direct fetch is not reliable verification.
+- Images only. PDFs are refused before upload; keep documents in a document store and link to them.
+- Files are limited to 10 MB, which is GitHub's own ceiling.
 
-For driver behavior, cleanup, and exit codes, see [SKILL.md](SKILL.md).
+For exit codes, see [SKILL.md](SKILL.md).
 
 ## Tests and contributions
 
-Run the offline test suites from the repository root:
+Run the offline test suite from the repository root:
 
 ```bash
 tests/mint-cli.test.sh
-tests/polling-survives-uploading.test.sh
-node tests/test_paste_lib.mjs
-node --test tests/orca-driver.test.mjs
 ```
 
-The polling shell entry point also runs the Orca driver suite. These tests use synthetic fixtures: they do not upload files or contact GitHub. Browser compatibility with the live GitHub editor requires a separate check against GitHub's current behavior.
+It uses synthetic fixtures and does not upload files or contact GitHub. To check a real upload, mint an image, embed its URL, and read the rendered body back.
 
-For changes, open an issue, work on a branch, run the tests, and submit a pull request. Keep credentials, browser profiles, and private attachments out of the repository.
+For changes, open an issue, work on a branch, run the tests, and submit a pull request. Keep credentials and private attachments out of the repository.
 
 ## Install, update, roll back, and remove
 
@@ -92,7 +80,7 @@ DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-ski
 DO_NOT_TRACK=1 npx skills remove github-attachments --agent claude-code codex --global
 ```
 
-If you prefer not to use `npx skills`, install from a checkout or a Git submodule pinned to the `v0.1.0` release tag, then expose that checkout as the `github-attachments` skill; to update or roll back, check out another release tag, and to remove it, delete the link or submodule.
+If you prefer not to use `npx skills`, install from a checkout or a Git submodule pinned to the `v0.1.0` release tag, then expose that checkout as the `github-attachments` skill. To update or roll back, check out another release tag. To remove it, delete the link or submodule.
 
 ## License
 
