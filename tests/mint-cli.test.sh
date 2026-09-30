@@ -40,6 +40,12 @@ check "unknown flag is refused"          2 "unknown flag"        -- "$mint" "$tm
 check "a removed browser driver is named" 2 "browser driver was removed" -- "$mint" "$tmp/tiny.png" --repo a/b --driver chrome
 check "an unknown driver is refused"      2 "wants auto or token" -- "$mint" "$tmp/tiny.png" --repo a/b --driver ie6
 
+# A value flag with nothing after it. Each one used to read an unset "$2" under `set -u`
+# and exit 1 with bash's own message, which told the caller nothing about the flag.
+for flag in --repo --alt --format --driver --timeout; do
+	check "$flag with no value is refused" 2 "mint: $flag needs a value" -- "$mint" "$tmp/tiny.png" "$flag"
+done
+
 # Images only, and refused before the upload: GitHub would accept a PDF and hand back a
 # files/ URL this skill no longer reads, so the caller would pay the transfer and then
 # time out. Both the name and the file's own first bytes are asked.

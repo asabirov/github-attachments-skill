@@ -18,6 +18,12 @@ image=""; repo=""; alt=""; format="url"; driver="auto"; timeout_s=60
 usage() { awk 'NR > 1 { if (!/^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; }
 
 while [ $# -gt 0 ]; do
+	# A value flag with nothing after it is a bad argument. Without this the "$2" below
+	# trips `set -u`, and the caller gets bash's exit 1 instead of the documented 2.
+	case "$1" in
+		--repo|--alt|--format|--driver|--timeout)
+			[ $# -ge 2 ] || { echo "mint: $1 needs a value" >&2; exit 2; } ;;
+	esac
 	case "$1" in
 		--repo)    repo="$2"; shift 2 ;;
 		--alt)     alt="$2"; shift 2 ;;

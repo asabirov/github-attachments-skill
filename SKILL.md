@@ -66,9 +66,9 @@ A PDF is refused by its name and then by its first bytes, so a PDF without a suf
 
 | Exit | Means |
 | --- | --- |
-| 2 | bad arguments, a missing or unreadable file, `--repo` not `owner/name`, a `--timeout` outside 1 to 3600 whole seconds, a removed `--driver`, a PDF, over GitHub's 10 MB limit, or bytes that do not match the name's type |
+| 2 | bad arguments, a value flag with no value, a missing or unreadable file, `--repo` not `owner/name`, a `--timeout` outside 1 to 3600 whole seconds, a removed `--driver`, a PDF, over GitHub's 10 MB limit, bytes that do not match the name's type, or `gh-mint` refusing the file |
 | 7 | the bytes went out and no URL came back, so the upload may have succeeded and retrying may create a second asset. A `5xx` from GitHub counts because it can arrive after storage |
-| 8 | the upload failed before anything was stored, so retrying is safe: GitHub or the broker refused it, or `gh` could not read the repository |
+| 8 | the upload failed before anything was stored, so retrying is safe: GitHub refused it, the broker would not run the upload, or `gh` could not read the repository |
 | 9 | this machine has no token route for this file: no `gh` login and no `gh-mint`, or a name that is not PNG, JPEG, GIF or WebP |
 
 Exit 9 is a plain failure. Its message identifies whether the problem is the missing token route or the unsupported file name.
