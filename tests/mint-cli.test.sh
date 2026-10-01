@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # What mint.sh refuses, and how fast.
 #
-# Every case here is refused before anything is uploaded. That is the point: a bad --repo
-# or a 12 MB file should cost nothing, and the failure that actually hurt in testing was
-# an over-size image that uploaded for a minute and then timed out, because GitHub rejects
-# on size after the transfer rather than before it.
+# Every case here is refused before anything is uploaded, or meets a fake gh-mint. That
+# is the point: a bad --repo or a 12 MB file should cost nothing, and the failure that
+# actually hurt in testing was an over-size image that uploaded for a minute and then
+# timed out, because GitHub rejects on size after the transfer rather than before it.
 
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -59,6 +59,16 @@ check "a PDF without a suffix is caught" 2 "uploads images only" -- "$mint" "$tm
 mkfile_size=$((11 * 1024 * 1024))
 dd if=/dev/zero of="$tmp/huge.png" bs=1024 count=$((mkfile_size / 1024)) 2>/dev/null
 check "oversize image is refused early"  2 "limit is 10 MB"      -- "$mint" "$tmp/huge.png" --repo a/b
+
+# The broker's mint says whether a retry is safe, and the exit code has to keep that.
+# A fake gh with no login sends the upload to a fake gh-mint that exits with $MINT_EXIT.
+mkdir -p "$tmp/bin"
+printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/gh"
+printf '#!/bin/sh\necho "gh-mint: exit $MINT_EXIT" >&2\nexit "$MINT_EXIT"\n' > "$tmp/bin/gh-mint"
+chmod +x "$tmp/bin/gh" "$tmp/bin/gh-mint"
+printf '\x89PNG\r\n\x1a\n' > "$tmp/real.png"
+check "mint 75, nothing stored, is safe to retry" 8 "a retry is safe" -- env PATH="$tmp/bin:$PATH" MINT_EXIT=75 "$mint" "$tmp/real.png" --repo a/b
+check "mint 76, maybe stored, is not"             7 "check before minting it again" -- env PATH="$tmp/bin:$PATH" MINT_EXIT=76 "$mint" "$tmp/real.png" --repo a/b
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
