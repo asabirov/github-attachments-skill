@@ -69,15 +69,18 @@ if (!token) {
   if (minted.stderr) writeSync(2, minted.stderr);
   const url = (minted.stdout || '').trim();
   if (minted.status === 0 && ASSET.test(url)) done(url);
-  // Only 64 and 77 are refusals before anything is sent. 75 is not: the broker
-  // returns it when the upload did not complete and when its own 90s cap stopped a
-  // mint that may already have reached GitHub. Everything else warns.
+  // The broker's exit says whether anything reached GitHub. 64 and 77 are refusals
+  // before sending, and 75 means nothing was stored: nothing sent, or GitHub answered
+  // 4xx. 76 means the bytes may be on GitHub (its 90s cap, a dropped connection, a
+  // 5xx, a 2xx with no URL), and so does any code this does not know.
   const sent = ['ETIMEDOUT', 'ENOBUFS'].includes(minted.error?.code)
-    || (!minted.error && ![64, 77].includes(minted.status));
+    || (!minted.error && ![64, 75, 77].includes(minted.status));
   if (minted.status === 64) fail(2, 'gh-mint refused the file; see its message above');
+  const meaning = { 75: '; nothing was stored, so a retry is safe',
+    76: '; the image may already be on GitHub, so check before minting it again' };
   fail(sent ? 7 : 8, minted.error
     ? `gh-mint failed: ${minted.error.code}`
-    : `gh-mint exited ${minted.status} without an attachment URL`);
+    : `gh-mint exited ${minted.status} without an attachment URL${meaning[minted.status] || ''}`);
 }
 
 // The asset is bound to this id at upload time, so --repo must name the repository
