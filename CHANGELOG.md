@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Before/after images stay separate.** The skill text now says to mint the before and after images separately, with the side and compared commit as visible text beside each image, instead of stitching them into one picture (#31).
+
 - **Uploads without a browser.** Where a `gh` login or the GitHub broker's `gh-mint` is available, the helper uploads the image with it in one request. A host with no browser, no display and no signed-in session can mint (#3).
 
 - **Exit codes 7 and 9.** 7 means the bytes went out and no URL came back, so a retry can leave a second asset behind. 8 covers every failure where nothing was uploaded and a retry is safe. 9 means this machine cannot mint this file: it has no `gh` login and no `gh-mint`, or the file is not named PNG, JPEG, GIF or WebP (#3, #22).

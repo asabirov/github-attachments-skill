@@ -19,6 +19,8 @@ gh pr edit 42 --repo example-owner/example-repo --body-file body.md
 
 Repository names and attachment IDs in these examples are synthetic placeholders, not live assets.
 
+For a before-and-after comparison, mint the before and after images separately; do not combine them into one image. Add the side and compared commit as visible text beside each image, not inside the image.
+
 ## Decision
 
 **Upload with a GitHub token in one request.** This is the only supported path. The URL is returned to the caller for embedding.
