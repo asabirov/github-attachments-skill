@@ -65,7 +65,7 @@ if (!token) {
   const minted = spawnSync('gh-mint', [image, '--repo', repo], {
     encoding: 'utf8', timeout: Math.max(left(), 150_000), maxBuffer: 256 * 1024,
   });
-  if (minted.error?.code === 'ENOENT') fail(9, 'no gh login here, and no gh-mint to reach the broker');
+  if (minted.error?.code === 'ENOENT') fail(9, 'no gh login or gh-mint; run `gh auth login` or set up the broker\'s `gh-mint`');
   if (minted.stderr) writeSync(2, minted.stderr);
   const url = (minted.stdout || '').trim();
   if (minted.status === 0 && ASSET.test(url)) done(url);

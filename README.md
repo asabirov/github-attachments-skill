@@ -31,12 +31,7 @@ Example output (synthetic ID, not a live attachment):
 ![screenshot](https://github.com/user-attachments/assets/00000000-0000-4000-8000-000000000000)
 ```
 
-By default, the command prints a URL. Use these options when needed:
-
-- `--format markdown` or `--format html` returns an embeddable link.
-- `--alt` sets the alternative text for the link.
-- `--driver token` selects the token upload.
-- `--timeout` sets the upload wait time in seconds. The default is `60`.
+Run `scripts/mint.sh --help` for the current options and defaults.
 
 ## Why it exists
 
@@ -46,13 +41,7 @@ Version 0.1.0 drove a signed-in browser and pasted the file into GitHub's own ed
 
 ## Limits and authentication
 
-- You need write access to the target repository through `gh` or `gh-mint`.
-- PNG, JPEG, GIF and WebP files are accepted by file name and by their first bytes. SVG files and videos are refused; render a diagram to PNG.
-- Upload the file to the repository where you will use the link. Private image references may require GitHub's rendered page to display correctly, so a direct fetch is not reliable verification.
-- Images only. PDFs are refused before upload; keep documents in a document store and link to them.
-- Files are limited to 10 MB, which is GitHub's own ceiling.
-
-For exit codes, see [SKILL.md](SKILL.md).
+See [SKILL.md](SKILL.md) for supported files, authentication routes, limits, exit codes, and upload behavior.
 
 ## Tests and contributions
 
@@ -80,7 +69,7 @@ The README on `main` names the new tag as soon as the release commit lands, so t
 Install the tagged skill with:
 
 ```bash
-DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-skill/tree/v0.1.0 --skill github-attachments --agent claude-code codex --global
+DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-skill/tree/v0.2.0 --skill github-attachments --agent claude-code codex --global
 ```
 
 `DO_NOT_TRACK=1` tells the skills CLI not to send telemetry. The `npx skills` installer requires Node.js/npm and Git. Update to a later release tag with the same command and its new tag. Roll back by rerunning it with the previous release tag. Remove it with:
@@ -89,7 +78,7 @@ DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-ski
 DO_NOT_TRACK=1 npx skills remove github-attachments --agent claude-code codex --global
 ```
 
-If you prefer not to use `npx skills`, install from a checkout or a Git submodule pinned to the `v0.1.0` release tag, then expose that checkout as the `github-attachments` skill. To update or roll back, check out another release tag. To remove it, delete the link or submodule.
+If you prefer not to use `npx skills`, install from a checkout or a Git submodule pinned to the `v0.2.0` release tag, then expose that checkout as the `github-attachments` skill. To update or roll back, check out another release tag. To remove it, delete the link or submodule.
 
 ## License
 

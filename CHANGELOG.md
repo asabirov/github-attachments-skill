@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-06
 
 ### Added
 
@@ -22,6 +22,8 @@
   Action: If you were uploading PDFs, store them elsewhere and put the link in your issue or pull request.
 
 ### Fixed
+
+- **Missing token route guidance.** When neither `gh` nor `gh-mint` is available, the helper now tells you to run `gh auth login` or set up the broker's `gh-mint` (#30).
 
 - **A `gh-mint` that stored nothing.** When the broker's mint exits 75 (nothing sent, or GitHub answered 4xx), the helper now exits 8, so a caller knows a retry is safe. It used to exit 7, which told the caller not to retry. A 76 (the image may already be on GitHub) still exits 7, and both messages now say which case it is (#23).
 
