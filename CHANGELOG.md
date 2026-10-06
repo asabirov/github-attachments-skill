@@ -23,6 +23,8 @@
 
 ### Fixed
 
+- **Missing token route guidance.** When neither `gh` nor `gh-mint` is available, the helper now tells you to run `gh auth login` or set up the broker's `gh-mint` (#30).
+
 - **A `gh-mint` that stored nothing.** When the broker's mint exits 75 (nothing sent, or GitHub answered 4xx), the helper now exits 8, so a caller knows a retry is safe. It used to exit 7, which told the caller not to retry. A 76 (the image may already be on GitHub) still exits 7, and both messages now say which case it is (#23).
 
 - **A value flag with no value.** `--repo`, `--alt`, `--format`, `--driver` and `--timeout` given with nothing after them now exit 2 and name the flag. Each one read an unset argument under `set -u` and exited 1 with bash's own `$2: unbound variable`. The exit table in SKILL.md is corrected too: `gh-mint` refusing a file is an exit 2, not an exit 8 (#25).
