@@ -68,7 +68,9 @@ fakebin="$here/tests/.fakes"
 mkdir -p "$fakebin"
 write_once() { # write_once <name> <content>
 	local f="$fakebin/$1"
-	if [ ! -e "$f" ] || [ "$(cat "$f")" != "$2" ]; then
+	# Compare exact bytes: `$(cat ...)` would strip trailing newlines, but the
+	# supplied bodies keep theirs, which rewrites both files on every run.
+	if [ ! -e "$f" ] || ! printf '%s' "$2" | cmp -s - "$f"; then
 		printf '%s' "$2" > "$f.tmp.$$"
 		chmod +x "$f.tmp.$$"
 		mv "$f.tmp.$$" "$f"
