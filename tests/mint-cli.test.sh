@@ -62,13 +62,30 @@ check "oversize image is refused early"  2 "limit is 10 MB"      -- "$mint" "$tm
 
 # The broker's mint says whether a retry is safe, and the exit code has to keep that.
 # A fake gh with no login sends the upload to a fake gh-mint that exits with $MINT_EXIT.
-mkdir -p "$tmp/bin"
-printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/gh"
-printf '#!/bin/sh\necho "gh-mint: exit $MINT_EXIT" >&2\nexit "$MINT_EXIT"\n' > "$tmp/bin/gh-mint"
-chmod +x "$tmp/bin/gh" "$tmp/bin/gh-mint"
+# Both live in a shared cache and are written only when their content changes, so a
+# repeat run adds no new executable file.
+fakebin="$here/tests/.fakes"
+mkdir -p "$fakebin"
+write_once() { # write_once <name> <content>
+	local f="$fakebin/$1"
+	# Compare exact bytes: `$(cat ...)` would strip trailing newlines, but the
+	# supplied bodies keep theirs, which rewrites both files on every run.
+	if [ ! -e "$f" ] || ! printf '%s' "$2" | cmp -s - "$f"; then
+		printf '%s' "$2" > "$f.tmp.$$"
+		chmod +x "$f.tmp.$$"
+		mv "$f.tmp.$$" "$f"
+	fi
+}
+write_once gh '#!/bin/sh
+exit 1
+'
+write_once gh-mint '#!/bin/sh
+echo "gh-mint: exit $MINT_EXIT" >&2
+exit "$MINT_EXIT"
+'
 printf '\x89PNG\r\n\x1a\n' > "$tmp/real.png"
-check "mint 75, nothing stored, is safe to retry" 8 "a retry is safe" -- env PATH="$tmp/bin:$PATH" MINT_EXIT=75 "$mint" "$tmp/real.png" --repo a/b
-check "mint 76, maybe stored, is not"             7 "check before minting it again" -- env PATH="$tmp/bin:$PATH" MINT_EXIT=76 "$mint" "$tmp/real.png" --repo a/b
+check "mint 75, nothing stored, is safe to retry" 8 "a retry is safe" -- env PATH="$fakebin:$PATH" MINT_EXIT=75 "$mint" "$tmp/real.png" --repo a/b
+check "mint 76, maybe stored, is not"             7 "check before minting it again" -- env PATH="$fakebin:$PATH" MINT_EXIT=76 "$mint" "$tmp/real.png" --repo a/b
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
