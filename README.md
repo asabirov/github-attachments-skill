@@ -2,21 +2,48 @@
 
 Upload images to GitHub issues, pull requests, and comments from an AI coding agent or the terminal—without committing them to the repository.
 
-```text
-Workflow diagram
-Local file → GitHub token → GitHub attachment URL → issue, PR, or comment
+Diagram of one upload:
+
+```mermaid
+flowchart LR
+    file[Local image] --> mint[scripts/mint.sh]
+    mint -->|gh login on this machine| upload[GitHub token upload]
+    mint -->|no gh login| broker[gh-mint on the machine with the token]
+    broker --> upload
+    upload --> url[GitHub attachment URL]
+    url --> body[Issue, pull request, or comment]
 ```
 
 ## Quick start
 
-You need Bash, Node.js 21 or later, and either:
+Install the tagged skill:
 
-- A `gh` login on this machine.
-- The GitHub broker's `gh-mint` command, which sends the file to another machine that holds the GitHub token.
+```bash
+DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-skill/tree/v0.2.0 --skill github-attachments --agent claude-code codex --global
+```
+
+`DO_NOT_TRACK=1` tells the skills CLI not to send telemetry. The command installs the `v0.2.0` release tag.
+
+Then ask your agent:
+
+> Attach screenshot.png to issue 12 in example-owner/example-repo.
+
+The agent uploads the file and puts the image in the issue. The agent instructions are in [SKILL.md](SKILL.md). The skill version is in `metadata.version` in [SKILL.md](SKILL.md).
+
+### What it needs
+
+| Dependency | Needed for |
+| --- | --- |
+| Node.js, npm and Git | the `npx skills` installer |
+| Bash | running `scripts/mint.sh` |
+| Node.js 21 or later | the upload request in `scripts/drivers/token.mjs` |
+| a `gh` login on this machine, or the GitHub broker's `gh-mint` command | the GitHub token for the upload. `gh-mint` sends the file to another machine that holds the token. |
 
 The tool has no npm dependencies and works on a headless host.
 
-Clone `asabirov/github-attachments-skill` and run commands from the repository root. To use it from an agent, expose the checkout as the `github-attachments` skill. The agent instructions are in [SKILL.md](SKILL.md). The skill version is in `metadata.version` in [SKILL.md](SKILL.md).
+### Run the script directly
+
+From the installed skill folder:
 
 ```bash
 # Uploads a local file to GitHub. Replace the path and repository first.
@@ -43,6 +70,14 @@ Version 0.1.0 drove a signed-in browser and pasted the file into GitHub's own ed
 
 See [SKILL.md](SKILL.md) for supported files, authentication routes, limits, exit codes, and upload behavior.
 
+## Update, roll back, and remove
+
+Update to a later release tag with the install command and its new tag. Roll back by rerunning it with the previous release tag. Remove it with:
+
+```bash
+DO_NOT_TRACK=1 npx skills remove github-attachments --agent claude-code codex --global
+```
+
 ## Tests and contributions
 
 Run the offline test suite from the repository root:
@@ -54,22 +89,6 @@ tests/mint-cli.test.sh
 It uses synthetic fixtures and does not upload files or contact GitHub. To check a real upload, mint an image, embed its URL, and read the rendered body back.
 
 For changes, open an issue, work on a branch, run the tests, and submit a pull request. Keep credentials and private attachments out of the repository. Maintainers find the release steps in [AGENTS.md](AGENTS.md).
-
-## Install, update, roll back, and remove
-
-Install the tagged skill with:
-
-```bash
-DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-skill/tree/v0.2.0 --skill github-attachments --agent claude-code codex --global
-```
-
-`DO_NOT_TRACK=1` tells the skills CLI not to send telemetry. The `npx skills` installer requires Node.js/npm and Git. Update to a later release tag with the same command and its new tag. Roll back by rerunning it with the previous release tag. Remove it with:
-
-```bash
-DO_NOT_TRACK=1 npx skills remove github-attachments --agent claude-code codex --global
-```
-
-If you prefer not to use `npx skills`, install from a checkout or a Git submodule pinned to the `v0.2.0` release tag, then expose that checkout as the `github-attachments` skill. To update or roll back, check out another release tag. To remove it, delete the link or submodule.
 
 ## License
 
