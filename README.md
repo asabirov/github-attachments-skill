@@ -41,7 +41,7 @@ Screenshots can help explain a review but do not belong in the repository's Git 
 
 ## How to run and verify it
 
-This check needs no login and uploads nothing. It exits with code 2:
+Put any PDF named `notes.pdf` in the current folder. This check needs no login and uploads nothing. It exits with code 2:
 
 ```console
 $ scripts/mint.sh notes.pdf --repo example-owner/example-repo
