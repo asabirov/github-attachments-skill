@@ -39,6 +39,15 @@ tmp_clean() { # remove every tracked temp file
 	TMPFILES=()
 }
 cleanup() { # one handler for EXIT, INT, TERM and HUP
+	# A background subshell inherits this EXIT trap. A watchdog killed by TERM
+	# before it arms its own trap can run the inherited one, and it must not
+	# delete the parent's temp files or kill the parent's jobs. BASH_SUBSHELL is
+	# 0 only in the main shell, and `case` still works in that half-torn-down
+	# context where a `[` test can return 127.
+	case "${BASH_SUBSHELL:-0}" in
+		0) : ;;
+		*) return 0 ;;
+	esac
 	kill -TERM $(jobs -p) 2>/dev/null || true
 	wait 2>/dev/null || true
 	tmp_clean

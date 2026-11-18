@@ -8,6 +8,10 @@
 
 - **The upload no longer needs Node.js.** The upload step now uses Bash and `curl` in `scripts/drivers/token.sh` instead of Node.js. A host mints an image with Bash, `curl`, and a `gh` login or the broker's `gh-mint`. Node.js stays only for the `npx skills` installer (#43).
 
+### Fixed
+
+- **A watchdog that deleted the output before it was read.** The watchdog is a subshell that inherits the cleanup trap. Under load, a TERM landing before it armed its own trap ran the inherited trap and removed the output and error files, so a fast `gh` call read back empty. `cleanup` now returns in a subshell, so only the main shell removes tracked files.
+
 ## 0.2.0 — 2026-10-06
 
 ### Added
