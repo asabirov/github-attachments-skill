@@ -51,9 +51,10 @@ case "$repo" in
 	*) echo "mint: --repo wants owner/name, got '$repo'" >&2; exit 2 ;;
 esac
 
-# Bounded at both ends, because a driver hands this straight to Node: `0` is not a
-# wait, and a number too big for a double arrives there as Infinity. Length is tested
-# first so bash is never asked to compare a 400-digit number.
+# Bounded at both ends, because the driver hands this to `sleep` and to curl's
+# `--max-time`: `0` is not a wait and means no limit, and a number too big for bash
+# arithmetic arrives as a wrong deadline. Length is tested first so bash is never
+# asked to compare a 400-digit number.
 bad_timeout() { echo "mint: --timeout wants 1 to 3600 whole seconds, got '${timeout_s:0:20}'" >&2; exit 2; }
 case "$timeout_s" in ''|*[!0-9]*|?????*) bad_timeout ;; esac
 [ "$timeout_s" -ge 1 ] && [ "$timeout_s" -le 3600 ] || bad_timeout
@@ -84,7 +85,7 @@ fi
 # One driver, and it opens no browser. Exit 9 was the cue to start one; it now means
 # this machine has no token upload for this file, which is the end of the road.
 case "$driver" in
-	auto|token)  attachment="$(node "$here/scripts/drivers/token.mjs" "$image" "$repo" "$timeout_s")" ;;
+	auto|token)  attachment="$(bash "$here/scripts/drivers/token.sh" "$image" "$repo" "$timeout_s")" ;;
 	chrome|orca) echo "mint: the $driver browser driver was removed; this skill uploads with a token, so give this machine a gh login or the broker's gh-mint" >&2; exit 2 ;;
 	*)           echo "mint: --driver wants auto or token" >&2; exit 2 ;;
 esac

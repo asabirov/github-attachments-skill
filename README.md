@@ -34,9 +34,9 @@ The agent uploads the file and puts the image in the issue. The agent instructio
 
 | Dependency | Needed for |
 | --- | --- |
-| Node.js, npm and Git | the `npx skills` installer |
+| Node.js 22.20.0 or later, npm and Git | the `npx skills` installer |
 | Bash | running `scripts/mint.sh` |
-| Node.js 21 or later | the upload request in `scripts/drivers/token.mjs` |
+| Bash and `curl` | the upload request in `scripts/drivers/token.sh` |
 | a `gh` login on this machine, or the GitHub broker's `gh-mint` command | the GitHub token for the upload. `gh-mint` sends the file to another machine that holds the token. |
 
 The tool has no npm dependencies and works on a headless host.
