@@ -11,7 +11,6 @@
 - **The README shows the skill first.** The page now opens with a diagram of one upload and uses tables for the reasons, the design and the file layout (#44).
 
 - **The install command follows the latest version.** The README installs with no release tag and shows `npx skills update`, because a skill installed from a tag does not update (#46).
-||||||| 28575c4
 
 ### Fixed
 
