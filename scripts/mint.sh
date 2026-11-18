@@ -57,6 +57,8 @@ esac
 # asked to compare a 400-digit number.
 bad_timeout() { echo "mint: --timeout wants 1 to 3600 whole seconds, got '${timeout_s:0:20}'" >&2; exit 2; }
 case "$timeout_s" in ''|*[!0-9]*|?????*) bad_timeout ;; esac
+# Read as decimal: `08` is eight seconds, not an octal syntax error.
+timeout_s=$((10#$timeout_s))
 [ "$timeout_s" -ge 1 ] && [ "$timeout_s" -le 3600 ] || bad_timeout
 
 # GitHub's token upload refuses PDFs outright, and documents belong in a document
@@ -84,8 +86,35 @@ fi
 
 # One driver, and it opens no browser. Exit 9 was the cue to start one; it now means
 # this machine has no token upload for this file, which is the end of the road.
+#
+# The driver runs as a background job so a signal can be handed to it: token.sh
+# owns the temp files and the curl child, and its own traps clean them, so a
+# signal here must reach it rather than die and leave them behind. The handler
+# kills every background job, waits for the cleanup, and exits with the signal's
+# code. INT, TERM and HUP all get this; a background shell ignores INT, so only
+# TERM and HUP are testable that way, but the trap is the same for all three.
+token_out=''
+forward_signal() { # forward_signal <exit-code>
+	kill -TERM $(jobs -p) 2>/dev/null || true
+	wait 2>/dev/null || true
+	exit "$1"
+}
+trap 'forward_signal 130' INT
+trap 'forward_signal 143' TERM
+trap 'forward_signal 129' HUP
+trap '[ -n "$token_out" ] && rm -f "$token_out"' EXIT
+
 case "$driver" in
-	auto|token)  attachment="$(bash "$here/scripts/drivers/token.sh" "$image" "$repo" "$timeout_s")" ;;
+	auto|token)
+		token_out="$(mktemp)"
+		bash "$here/scripts/drivers/token.sh" "$image" "$repo" "$timeout_s" >"$token_out" &
+		token_pid=$!
+		token_rc=0
+		wait "$token_pid" || token_rc=$?
+		attachment="$(cat "$token_out" 2>/dev/null || true)"
+		rm -f "$token_out"; token_out=''
+		[ "$token_rc" -eq 0 ] || exit "$token_rc"
+		;;
 	chrome|orca) echo "mint: the $driver browser driver was removed; this skill uploads with a token, so give this machine a gh login or the broker's gh-mint" >&2; exit 2 ;;
 	*)           echo "mint: --driver wants auto or token" >&2; exit 2 ;;
 esac

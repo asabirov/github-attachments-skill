@@ -18,7 +18,35 @@ timeout_s="${3:-60}"
 UPLOAD='https://uploads.github.com/user-attachments/assets'
 # The URL is matched on its whole shape: 36 characters, each a hex digit or `-`.
 ASSET='^https://github\.com/user-attachments/assets/[0-9a-fA-F-]{36}$'
-QUOTED_ASSET='"https://github\.com/user-attachments/assets/[0-9a-fA-F-]{36}"'
+
+# Every temp file is tracked, and INT, TERM and HUP clean them all and kill
+# every child first. A signal mid-upload must not leave the token's temp file
+# or a live curl, so the handler kills the background jobs before it removes
+# the files. track records a path; cleanup is the one place that removes them.
+# The paths live in a Bash array, not one space-joined string, so a path that
+# holds a space (a TMPDIR with a space) still resolves as one element. The
+# length guard keeps `set -u` quiet on Bash 3.2, where an empty array expansion
+# is an unbound variable.
+TMPFILES=()
+track() { # track <path...> — record temp files for cleanup on every exit
+	TMPFILES+=("$@")
+}
+tmp_clean() { # remove every tracked temp file
+	local i
+	for ((i = 0; i < ${#TMPFILES[@]}; i++)); do
+		rm -f "${TMPFILES[$i]}" 2>/dev/null
+	done
+	TMPFILES=()
+}
+cleanup() { # one handler for EXIT, INT, TERM and HUP
+	kill -TERM $(jobs -p) 2>/dev/null || true
+	wait 2>/dev/null || true
+	tmp_clean
+}
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 129' HUP
 
 # printf, not echo: a message is one write, so it cannot be split by a signal.
 fail() { # fail <code> <message...>
@@ -47,10 +75,202 @@ urlsearch() {
 	done
 }
 
+# Parse the upload answer the way the old driver did: JSON.parse, then the
+# first top-level string value whose whole shape is an asset URL. A recursive
+# descent reader in awk accepts only real JSON (object, array, string, number,
+# true, false and null), so trailing text, a trailing comma, a bare key, a
+# missing colon, a bad escape or a raw control character in a string all
+# refuse the body the way JSON.parse does. It unescapes \/ and prints one
+# top-level string value per line; exit 1 means malformed JSON, which the
+# caller maps to the same exit 7 refusal as a missing URL.
+json_top_strings() {
+	awk '
+		function ws(    c) {
+			while (pos <= length(json)) {
+				c = substr(json, pos, 1)
+				if (c == " " || c == "\t" || c == "\n" || c == "\r") pos++
+				else return
+			}
+		}
+		function hexval(c) {
+			if (c >= "0" && c <= "9") return index("0123456789", c) - 1
+			return index("abcdef", tolower(c)) + 9
+		}
+		function is_hex(s,    i, c) {
+			for (i = 1; i <= 4; i++) {
+				c = substr(s, i, 1)
+				if (!((c >= "0" && c <= "9") || (c >= "a" && c <= "f") || (c >= "A" && c <= "F"))) return 0
+			}
+			return 1
+		}
+		function parse_string(    c, e, u, v) {
+			sval = ""
+			pos++
+			while (pos <= length(json)) {
+				c = substr(json, pos, 1); pos++
+				if (c == "\"") return 1
+				if (c == "\\") {
+					if (pos > length(json)) { err = 1; return 0 }
+					e = substr(json, pos, 1); pos++
+					if (e == "\"") sval = sval "\""
+					else if (e == "\\") sval = sval "\\"
+					else if (e == "/") sval = sval "/"
+					else if (e == "b") sval = sval "\b"
+					else if (e == "f") sval = sval "\f"
+					else if (e == "n") sval = sval "\n"
+					else if (e == "r") sval = sval "\r"
+					else if (e == "t") sval = sval "\t"
+					else if (e == "u") {
+						if (pos + 3 > length(json)) { err = 1; return 0 }
+						u = substr(json, pos, 4)
+						if (!is_hex(u)) { err = 1; return 0 }
+						pos += 4
+						v = hexval(substr(u, 1, 1)) * 4096 + hexval(substr(u, 2, 1)) * 256 + hexval(substr(u, 3, 1)) * 16 + hexval(substr(u, 4, 1))
+						if (v == 0) sval = sval "?"
+						else if (v <= 127) sval = sval sprintf("%c", v)
+						else sval = sval "?"
+					}
+					else { err = 1; return 0 }
+					continue
+				}
+				if (c < " ") { err = 1; return 0 }
+				sval = sval c
+			}
+			err = 1; return 0
+		}
+		function parse_number(    c) {
+			c = substr(json, pos, 1)
+			if (c == "-") {
+				pos++
+				if (pos > length(json)) { err = 1; return 0 }
+				c = substr(json, pos, 1)
+				if (!(c >= "0" && c <= "9")) { err = 1; return 0 }
+			}
+			if (c == "0") pos++
+			else if (c >= "1" && c <= "9") {
+				pos++
+				while (pos <= length(json)) {
+					c = substr(json, pos, 1)
+					if (c >= "0" && c <= "9") pos++; else break
+				}
+			} else { err = 1; return 0 }
+			if (pos <= length(json) && substr(json, pos, 1) == ".") {
+				pos++
+				if (pos > length(json) || !(substr(json, pos, 1) >= "0" && substr(json, pos, 1) <= "9")) { err = 1; return 0 }
+				while (pos <= length(json)) {
+					c = substr(json, pos, 1)
+					if (c >= "0" && c <= "9") pos++; else break
+				}
+			}
+			if (pos <= length(json)) {
+				c = substr(json, pos, 1)
+				if (c == "e" || c == "E") {
+					pos++
+					if (pos > length(json)) { err = 1; return 0 }
+					c = substr(json, pos, 1)
+					if (c == "+" || c == "-") {
+						pos++
+						if (pos > length(json)) { err = 1; return 0 }
+						c = substr(json, pos, 1)
+					}
+					if (!(c >= "0" && c <= "9")) { err = 1; return 0 }
+					while (pos <= length(json)) {
+						c = substr(json, pos, 1)
+						if (c >= "0" && c <= "9") pos++; else break
+					}
+				}
+			}
+			return 1
+		}
+		function parse_literal() {
+			if (substr(json, pos, 4) == "true") { pos += 4; return 1 }
+			if (substr(json, pos, 5) == "false") { pos += 5; return 1 }
+			if (substr(json, pos, 4) == "null") { pos += 4; return 1 }
+			err = 1; return 0
+		}
+		function parse_object(depth,    c) {
+			pos++
+			ws()
+			if (pos > length(json)) { err = 1; return 0 }
+			if (substr(json, pos, 1) == "}") { pos++; return 1 }
+			while (1) {
+				ws()
+				if (pos > length(json)) { err = 1; return 0 }
+				if (substr(json, pos, 1) != "\"") { err = 1; return 0 }
+				if (!parse_string()) return 0
+				ws()
+				if (pos > length(json) || substr(json, pos, 1) != ":") { err = 1; return 0 }
+				pos++
+				if (!parse_value(depth + 1)) return 0
+				ws()
+				if (pos > length(json)) { err = 1; return 0 }
+				c = substr(json, pos, 1)
+				if (c == ",") {
+					pos++
+					ws()
+					if (pos > length(json) || substr(json, pos, 1) == "}") { err = 1; return 0 }
+					continue
+				}
+				if (c == "}") { pos++; return 1 }
+				err = 1; return 0
+			}
+		}
+		function parse_array(depth,    c) {
+			pos++
+			ws()
+			if (pos > length(json)) { err = 1; return 0 }
+			if (substr(json, pos, 1) == "]") { pos++; return 1 }
+			while (1) {
+				if (!parse_value(depth + 1)) return 0
+				ws()
+				if (pos > length(json)) { err = 1; return 0 }
+				c = substr(json, pos, 1)
+				if (c == ",") {
+					pos++
+					ws()
+					if (pos > length(json) || substr(json, pos, 1) == "]") { err = 1; return 0 }
+					continue
+				}
+				if (c == "]") { pos++; return 1 }
+				err = 1; return 0
+			}
+		}
+		function parse_value(depth,    c) {
+			ws()
+			if (pos > length(json)) { err = 1; return 0 }
+			c = substr(json, pos, 1)
+			if (c == "{") return parse_object(depth)
+			if (c == "[") return parse_array(depth)
+			if (c == "\"") {
+				if (!parse_string()) return 0
+				if (depth == 1) { n++; vals[n] = sval }
+				return 1
+			}
+			if (c == "-" || (c >= "0" && c <= "9")) return parse_number()
+			if (c == "t" || c == "f" || c == "n") return parse_literal()
+			err = 1; return 0
+		}
+		BEGIN {
+			json = ""
+			while ((getline line) > 0) json = json line "\n"
+			pos = 1; err = 0; n = 0
+			parse_value(0)
+			if (!err) {
+				ws()
+				if (pos <= length(json)) err = 1
+			}
+			if (err) exit 1
+			for (j = 1; j <= n; j++) print vals[j]
+			exit 0
+		}
+	'
+}
+
 # One deadline for the whole run, from --timeout. `date +%s` is the portable
 # part, and the budget is whole seconds, so left() is whole seconds too.
 budget="$timeout_s"
 case "$budget" in ''|*[!0-9]*) budget=60 ;; esac
+budget=$((10#$budget))
 [ "$budget" = 0 ] && budget=60
 [ "$budget" -gt 3600 ] && budget=3600
 [ "$budget" -lt 1 ] && budget=1
@@ -76,18 +296,19 @@ run_timed() { # run_timed <min_seconds> -- <command...>
 	local min_sec="$1"; shift
 	local out seconds pid w rc
 	[ -n "$timed_err_file" ] && rm -f "$timed_err_file"
-	timed_err_file="$(mktemp)"
-	out="$(mktemp)"
+	timed_err_file="$(mktemp)"; track "$timed_err_file"
+	out="$(mktemp)"; track "$out"
 	seconds="$(left)"
 	[ "$seconds" -lt "$min_sec" ] && seconds="$min_sec"
 	"$@" >"$out" 2>"$timed_err_file" </dev/null &
 	pid=$!
 	(
-		trap 'kill "${s:-}" 2>/dev/null; exit 0' TERM
+		# The trap kills the pending sleep through the job table, so a TERM
+		# that lands before or after `sleep &` cannot leave the sleep alive.
+		trap 'kill -TERM $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true; exit 0' TERM
 		sleep "$seconds" &
-		s=$!
-		wait "$s"
-		kill -TERM "$pid" 2>/dev/null
+		wait
+		kill -TERM "$pid" 2>/dev/null || true
 	) </dev/null >/dev/null 2>&1 &
 	w=$!
 	rc=0
@@ -105,9 +326,11 @@ run_timed() { # run_timed <min_seconds> -- <command...>
 base="${image##*/}"
 ext=''
 case "$base" in
-	.*) ;;
 	*.*) ext=".${base##*.}" ;;
 esac
+# A dotfile such as .png has no extension, as Node's extname says: its only
+# dot is the first character. .shot.png keeps its .png.
+[ "$base" = "$ext" ] && ext=''
 ext_lc="$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')"
 type=''
 case "$ext_lc" in
@@ -121,9 +344,7 @@ esac
 # Read the bytes once into a private copy: a symlink named x.png can point at
 # anything, and a swap cannot change the bytes between the check and the upload
 # when both see the same private file. The copy is removed on every exit.
-copy="$(mktemp)"
-tmp_clean() { rm -f "${copy:-}" "${timed_err_file:-}"; }
-trap tmp_clean EXIT
+copy="$(mktemp)"; track "$copy"
 chmod 600 "$copy"
 if ! cp "$image" "$copy" 2>/dev/null; then
 	fail 2 "cannot read $image: could not copy the file"
@@ -204,21 +425,25 @@ fi
 # curl sends the copy, never the path mint.sh looked at, with the token on
 # stdin rather than argv. No -L: a redirect would re-send the token. curl's
 # own stderr is the reason on failure, and carries no token.
-body_file="$(mktemp)"; curl_err="$(mktemp)"; status_file="$(mktemp)"
+body_file="$(mktemp)"; curl_err="$(mktemp)"; status_file="$(mktemp)"; track "$body_file" "$curl_err" "$status_file"
 remain="$(left)"
 if [ "$remain" -le 0 ]; then maxtime='0.001'; else maxtime="$remain"; fi
 query="name=$(urlsearch "$base")&content_type=$(urlsearch "$type")&repository_id=$id"
 curl_rc=0
-curl --silent --show-error --max-time "$maxtime" \
+# -q first: a .curlrc could record or forward the token, or add -L. curl runs
+# as a tracked background job so a signal can kill it too.
+curl -q --silent --show-error --max-time "$maxtime" \
 	--config - \
 	--data-binary @"$copy" \
 	-H "Content-Type: $type" \
 	-H 'Accept: application/vnd.github+json' \
 	-o "$body_file" \
 	-w '%{http_code}' \
-	"$UPLOAD?$query" >"$status_file" 2>"$curl_err" <<CONFIG || curl_rc=$?
+	"$UPLOAD?$query" >"$status_file" 2>"$curl_err" <<CONFIG &
 header = "Authorization: token $token"
 CONFIG
+curl_pid=$!
+wait "$curl_pid" || curl_rc=$?
 status="$(cat "$status_file" 2>/dev/null || true)"
 body="$(cat "$body_file" 2>/dev/null || true)"
 curl_err_text="$(cat "$curl_err" 2>/dev/null || true)"
@@ -236,9 +461,16 @@ fi
 
 case "$status" in
 	2*)
-		# The field holding it is undocumented, so the URL is matched on its
-		# shape, as a whole JSON string value.
-		url="$(printf '%s' "$body" | grep -Eo -m 1 "$QUOTED_ASSET" | tr -d '"' || true)"
+		# Parse like the old driver: read top-level JSON string values only,
+		# unescape \/, and take the first whose whole shape is an asset URL.
+		# Malformed JSON is the same refusal: exit 7, one message.
+		top_values=''
+		top_rc=0
+		top_values="$(printf '%s' "$body" | json_top_strings)" || top_rc=$?
+		if [ "$top_rc" -ne 0 ]; then
+			fail 7 "the upload answered HTTP $status without an attachment URL"
+		fi
+		url="$(printf '%s' "$top_values" | grep -Em 1 "$ASSET" || true)"
 		[ -n "$url" ] || fail 7 "the upload answered HTTP $status without an attachment URL"
 		print_url "$url"
 		;;
