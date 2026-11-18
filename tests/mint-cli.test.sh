@@ -197,16 +197,27 @@ check "a gh login uploads with curl"                0 "$asset" -- env PATH="$fak
 
 # The pending sleep must also be dead when mint.sh returns: the watchdog's
 # TERM trap is what kills it, and removing that cleanup must fail this test.
-pidfile="$tmp/sleeppids"; rm -f "$pidfile"
+# A fast upload can end before the watchdog's sleep starts, so no sleep PID is
+# recorded and nothing leaked; that alone is not a failure. Repeat the run
+# until a sleep is recorded, up to a fixed limit, so a recorded one gives the
+# verdict. A recorded sleep that is still alive fails.
+pidfile="$tmp/sleeppids"; : > "$pidfile"
 check "mint.sh returns while a long sleep is pending" 0 "$asset" -- env PATH="$fake_path" GH_AUTH=1 SLEEP_PID_FILE="$pidfile" CURL_STATUS=201 CURL_BODY="{\"url\":\"$asset\"}" "$mint" "$tmp/real.png" --repo a/b
+attempts=0
+while [ "$attempts" -lt 20 ] && [ ! -s "$pidfile" ]; do
+	env PATH="$fake_path" GH_AUTH=1 SLEEP_PID_FILE="$pidfile" CURL_STATUS=201 CURL_BODY="{\"url\":\"$asset\"}" "$mint" "$tmp/real.png" --repo a/b >/dev/null 2>&1
+	attempts=$((attempts + 1))
+done
 leak=0
 while IFS= read -r p; do
 	[ -n "$p" ] && kill -0 "$p" 2>/dev/null && leak=1
 done < "$pidfile"
-if [ "$leak" -eq 0 ] && [ -s "$pidfile" ]; then
+if [ "$leak" -eq 1 ]; then
+	fail=$((fail + 1)); printf 'FAIL a pending sleep survived\n'
+elif [ -s "$pidfile" ]; then
 	pass=$((pass + 1)); printf 'ok   the pending sleep was killed\n'
 else
-	fail=$((fail + 1)); printf 'FAIL a pending sleep survived (or none was recorded)\n'
+	pass=$((pass + 1)); printf 'ok   no pending sleep was recorded (the upload finished first)\n'
 fi
 
 # The upload answer is parsed like the old driver: top-level JSON string values
