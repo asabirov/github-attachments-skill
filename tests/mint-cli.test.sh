@@ -276,5 +276,55 @@ for spec in "TERM 143" "HUP 129"; do
 	fi
 done
 
+# run_timed's watchdog is a subshell that inherits the EXIT trap. Under load, a
+# TERM that lands before the watchdog arms its own trap runs the inherited trap
+# and deletes the output file the caller is about to read back. Pin one allowed
+# CPU and run the fast path 20 times with two busy loops on that CPU; every run
+# must print the asset. Without the BASH_SUBSHELL guard in cleanup, some runs
+# read an empty id or token and fail. The CPU is the first in this process's
+# allowed set, and the check is skipped when no CPU is allowed. The loops
+# self-limit, a TERM trap kills them, and the fakes shadow gh-mint, so no run
+# reaches a real broker.
+if command -v taskset >/dev/null 2>&1; then
+	race_cpu="$(taskset -cp $$ 2>/dev/null | sed -n 's/.*affinity list: *//p' | grep -Eo '^[0-9]+')"
+	if [ -z "$race_cpu" ]; then
+		pass=$((pass + 1)); printf 'ok   run_timed keeps its output under load (skipped: no allowed CPU)\n'
+	else
+		race_ok=1
+		race_rc=0
+		race_out=''
+		race_b1=''; race_b2=''
+		race_kill_loops() {
+			[ -n "$race_b1" ] && kill "$race_b1" 2>/dev/null
+			[ -n "$race_b2" ] && kill "$race_b2" 2>/dev/null
+			wait "$race_b1" 2>/dev/null
+			wait "$race_b2" 2>/dev/null
+			race_b1=''; race_b2=''
+		}
+		trap 'race_kill_loops; exit 143' TERM
+		taskset -c "$race_cpu" bash -c 'i=0; while [ "$i" -lt 5000000 ]; do :; i=$((i + 1)); done' &
+		race_b1=$!
+		taskset -c "$race_cpu" bash -c 'i=0; while [ "$i" -lt 5000000 ]; do :; i=$((i + 1)); done' &
+		race_b2=$!
+		race_i=0
+		while [ "$race_i" -lt 20 ]; do
+			race_out="$(env PATH="$fake_path" GH_AUTH=1 CURL_STATUS=201 CURL_BODY="{\"url\":\"$asset\"}" taskset -c "$race_cpu" "$mint" "$tmp/real.png" --repo a/b 2>&1)"
+			race_rc=$?
+			if [ "$race_rc" -ne 0 ] || [ "$race_out" != "$asset" ]; then
+				race_ok=0
+				break
+			fi
+			race_i=$((race_i + 1))
+		done
+		race_kill_loops
+		trap - TERM
+		if [ "$race_ok" -eq 1 ]; then
+			pass=$((pass + 1)); printf 'ok   run_timed keeps its output under load\n'
+		else
+			fail=$((fail + 1)); printf 'FAIL run_timed lost its output under load (exit %s)\n     %s\n' "$race_rc" "$race_out"
+		fi
+	fi
+fi
+
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
