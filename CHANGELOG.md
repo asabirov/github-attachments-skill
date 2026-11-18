@@ -8,6 +8,10 @@
 
 - **The upload no longer needs Node.js.** The upload step now uses Bash and `curl` in `scripts/drivers/token.sh` instead of Node.js. A host mints an image with Bash, `curl`, and a `gh` login or the broker's `gh-mint`. Node.js stays only for the `npx skills` installer (#43).
 
+- **The README shows the skill first.** The page now opens with a diagram of one upload and uses tables for the reasons, the design and the file layout (#44).
+
+- **The install command follows the latest version.** The README installs with no release tag and shows `npx skills update`, because a skill installed from a tag does not update (#46).
+
 ## 0.2.0 — 2026-10-06
 
 ### Added
