@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The installer row names its Node.js floor.** The dependency table now says Node.js 22.20.0 or later, npm and Git for the `npx skills` installer. This matches the skills CLI 1.9.0 `engines.node` (#42).
+
+- **The upload no longer needs Node.js.** The upload step now uses Bash and `curl` in `scripts/drivers/token.sh` instead of Node.js. A host mints an image with Bash, `curl`, and a `gh` login or the broker's `gh-mint`. Node.js stays only for the `npx skills` installer (#43).
+
 ## 0.2.0 — 2026-10-06
 
 ### Added

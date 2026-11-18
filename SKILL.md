@@ -47,7 +47,7 @@ gh api repos/OWNER/REPO/pulls/N -H 'Accept: application/vnd.github.html+json' --
 
 ## What it needs on the machine
 
-Bash, Node.js 21 or later, and one of these token routes:
+Bash, `curl`, and one of these token routes:
 
 | Route | What happens |
 | --- | --- |
