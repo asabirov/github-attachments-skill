@@ -11,6 +11,11 @@
 - **The README shows the skill first.** The page now opens with a diagram of one upload and uses tables for the reasons, the design and the file layout (#44).
 
 - **The install command follows the latest version.** The README installs with no release tag and shows `npx skills update`, because a skill installed from a tag does not update (#46).
+||||||| 28575c4
+
+### Fixed
+
+- **A watchdog that deleted the output before it was read.** The watchdog is a subshell that inherits the cleanup trap. Under load, a TERM landing before it armed its own trap ran the inherited trap and removed the output and error files, so a fast `gh` call read back empty. `cleanup` now returns in a subshell, so only the main shell removes tracked files.
 
 ## 0.2.0 — 2026-10-06
 
