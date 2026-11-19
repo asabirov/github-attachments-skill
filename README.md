@@ -53,7 +53,7 @@ mint: notes.pdf is a PDF, and this skill uploads images only; keep documents in 
 Install the latest version:
 
 ```sh
-DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-skill --skill github-attachments --global
+DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/github-attachments-skill --skill github-attachments --agent claude-code codex --global -y
 ```
 
 Update it later:
@@ -101,7 +101,7 @@ Run `scripts/mint.sh --help` for the current options and defaults.
 ### Remove it
 
 ```bash
-DO_NOT_TRACK=1 npx skills remove github-attachments --agent claude-code codex --global
+DO_NOT_TRACK=1 npx skills remove github-attachments --agent claude-code codex --global -y
 ```
 
 ### Tests and contributions
